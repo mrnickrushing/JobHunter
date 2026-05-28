@@ -232,7 +232,7 @@ export default function JobDetail() {
                   </select>
                   <input value={newEvent.title} onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))} placeholder="Event title *" required />
                 </div>
-                <input value={newEvent.scheduled_at} onChange={e => setNewEvent(p => ({ ...p, scheduled_at: e.target.value })} type="datetime-local" />
+                <input value={newEvent.scheduled_at} onChange={e => setNewEvent(p => ({ ...p, scheduled_at: e.target.value }))} type="datetime-local" />
                 <textarea value={newEvent.notes} onChange={e => setNewEvent(p => ({ ...p, notes: e.target.value }))} placeholder="Notes..." rows={2} />
                 <button type="submit" className={styles.submitSmall} disabled={addingEvent}>
                   {addingEvent ? 'Adding...' : 'Add Event'}
