@@ -42,7 +42,10 @@ function stripMarkdownFences(text) {
   return text
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```\s*$/, '')
-    .trim();
+    .trim()
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
 }
 
 function getJobAndResume(jobId, resumeId, userId) {
