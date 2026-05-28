@@ -1,5 +1,8 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const PizZip = require('pizzip');
+const Docxtemplater = require('docxtemplater');
+const { Document, Paragraph, TextRun, HeadingLevel, Packer } = require('docx');
 const db = require('../db');
 const config = require('../config');
 const authMiddleware = require('../middleware/auth');
@@ -55,6 +58,94 @@ function getJobAndResume(jobId, resumeId, userId) {
   return { job, resume };
 }
 
+/**
+ * Injects tailored text content back into the original DOCX XML.
+ * This replaces all text runs in the document body while preserving
+ * all paragraph styles, fonts, sizes, and formatting markup.
+ */
+function injectContentIntoDocx(originalDocxBuffer, newTextContent) {
+  const zip = new PizZip(originalDocxBuffer);
+
+  // Parse the document XML
+  const docXml = zip.file('word/document.xml').asText();
+
+  // Extract all text from the original to understand paragraph structure
+  const paragraphRegex = /<w:p[ >][\s\S]*?<\/w:p>/g;
+  const originalParagraphs = docXml.match(paragraphRegex) || [];
+
+  // Split incoming content into lines
+  const newLines = newTextContent.split('\n');
+
+  // Build a new XML body by rebuilding paragraphs:
+  // - For each original paragraph, extract its formatting (pPr = paragraph properties)
+  //   and the first run's formatting (rPr = run properties)
+  // - Replace the text content with the corresponding new line
+  // - Extra new lines beyond original paragraph count get appended with default formatting
+
+  let lineIndex = 0;
+  let newDocXml = docXml;
+
+  // Replace paragraph content while keeping formatting
+  const rebuiltParagraphs = originalParagraphs.map(para => {
+    // Extract paragraph properties (formatting)
+    const pPrMatch = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+    const pPr = pPrMatch ? pPrMatch[0] : '';
+
+    // Extract run properties from the first run
+    const rPrMatch = para.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+    const rPr = rPrMatch ? rPrMatch[0] : '';
+
+    // Get next line of new content, skip blank lines to match non-empty original paras
+    let lineText = '';
+    if (lineIndex < newLines.length) {
+      lineText = newLines[lineIndex] || '';
+      lineIndex++;
+    }
+
+    // Escape XML special characters
+    const escaped = lineText
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    // Rebuild paragraph with original formatting + new text
+    return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`;
+  });
+
+  // Replace original paragraphs in XML with rebuilt ones
+  let rebuildIndex = 0;
+  newDocXml = newDocXml.replace(paragraphRegex, () => {
+    return rebuiltParagraphs[rebuildIndex++] || '<w:p></w:p>';
+  });
+
+  // Update the zip with new document XML
+  zip.file('word/document.xml', newDocXml);
+
+  return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+/**
+ * Builds a plain DOCX from text when no original DOCX template exists (e.g. PDF uploads).
+ */
+async function buildPlainDocx(textContent) {
+  const paragraphs = textContent.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return new Paragraph({ children: [] });
+    if (trimmed === trimmed.toUpperCase() && trimmed.length < 80) {
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({ text: trimmed, bold: true })],
+      });
+    }
+    return new Paragraph({ children: [new TextRun(trimmed)] });
+  });
+
+  const doc = new Document({ sections: [{ children: paragraphs }] });
+  return Packer.toBuffer(doc);
+}
+
 // POST /api/ai/tailor-resume
 router.post('/tailor-resume', async (req, res) => {
   try {
@@ -65,11 +156,17 @@ router.post('/tailor-resume', async (req, res) => {
 
     const { job, resume } = getJobAndResume(jobId, resumeId, req.user.id);
 
-    const system = 'You are an expert resume writer and career coach. Tailor resumes to be ATS-optimized and highly relevant to specific job descriptions.';
+    const system = `You are an expert resume writer. 
+You MUST preserve the exact structure and section order of the original resume. 
+Only update the content — keywords, phrasing, skills, and emphasis — to better match the job description. 
+Do NOT add, remove, or reorder sections. 
+Do NOT add headers or explanations. 
+Return the tailored resume as plain text only, maintaining the same line-by-line structure as the original.`;
+
     const messages = [
       {
         role: 'user',
-        content: `Please tailor the following resume for the job listed below. Optimize it to match the job requirements, incorporate relevant keywords, and highlight the most relevant experience. Keep the same basic format but adjust content to best match this specific role.
+        content: `Tailor the resume below for the following job. Preserve the exact structure line by line.
 
 JOB TITLE: ${job.title}
 COMPANY: ${job.company}
@@ -78,13 +175,12 @@ ${job.description ? `JOB DESCRIPTION:\n${job.description}` : ''}
 ORIGINAL RESUME:
 ${resume.content}
 
-Please provide the tailored resume content only, no explanations or headers.`,
+Return ONLY the tailored resume text. Same structure, same sections, job-optimized content.`,
       },
     ];
 
     const content = await callClaude(messages, system);
 
-    // Save to ai_documents (upsert-style: insert new version)
     db.prepare(`
       INSERT INTO ai_documents (job_id, user_id, type, content)
       VALUES (?, ?, 'tailored_resume', ?)
@@ -92,11 +188,59 @@ Please provide the tailored resume content only, no explanations or headers.`,
 
     res.json({ content });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ error: err.message });
-    }
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Tailor resume error:', err);
     res.status(500).json({ error: err.message || 'Failed to tailor resume.' });
+  }
+});
+
+// POST /api/ai/tailor-resume/download
+// Generates a DOCX: format-preserving if original was DOCX, plain if PDF
+router.post('/tailor-resume/download', async (req, res) => {
+  try {
+    const { jobId, resumeId } = req.body;
+    if (!jobId || !resumeId) {
+      return res.status(400).json({ error: 'jobId and resumeId are required.' });
+    }
+
+    // Get the most recent tailored resume AI document for this job
+    const aiDoc = db.prepare(`
+      SELECT content FROM ai_documents
+      WHERE job_id = ? AND user_id = ? AND type = 'tailored_resume'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(jobId, req.user.id);
+
+    if (!aiDoc) {
+      return res.status(404).json({ error: 'No tailored resume found. Please generate one first.' });
+    }
+
+    const resume = db.prepare('SELECT * FROM resumes WHERE id = ? AND user_id = ?').get(resumeId, req.user.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
+
+    const job = db.prepare('SELECT title, company FROM jobs WHERE id = ? AND user_id = ?').get(jobId, req.user.id);
+    const safeCompany = job ? job.company.replace(/[^a-z0-9]/gi, '_') : 'company';
+    const filename = `${safeCompany}_tailored_resume.docx`;
+
+    let docxBuffer;
+
+    const isDocx = resume.file_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    if (isDocx && resume.file_data) {
+      // Format-preserving: inject content into the original DOCX template
+      docxBuffer = injectContentIntoDocx(resume.file_data, aiDoc.content);
+    } else {
+      // PDF or no binary: build a plain clean DOCX
+      docxBuffer = await buildPlainDocx(aiDoc.content);
+    }
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(docxBuffer);
+  } catch (err) {
+    console.error('Tailor resume download error:', err);
+    res.status(500).json({ error: 'Failed to generate document.' });
   }
 });
 
@@ -143,11 +287,43 @@ Output only the cover letter text, no extra headers or explanations. Start with 
 
     res.json({ content });
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ error: err.message });
-    }
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Cover letter error:', err);
     res.status(500).json({ error: err.message || 'Failed to generate cover letter.' });
+  }
+});
+
+// POST /api/ai/cover-letter/download
+// Generates the cover letter as a DOCX file
+router.post('/cover-letter/download', async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'jobId is required.' });
+
+    const aiDoc = db.prepare(`
+      SELECT content FROM ai_documents
+      WHERE job_id = ? AND user_id = ? AND type = 'cover_letter'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(jobId, req.user.id);
+
+    if (!aiDoc) {
+      return res.status(404).json({ error: 'No cover letter found. Please generate one first.' });
+    }
+
+    const job = db.prepare('SELECT title, company FROM jobs WHERE id = ? AND user_id = ?').get(jobId, req.user.id);
+    const safeCompany = job ? job.company.replace(/[^a-z0-9]/gi, '_') : 'company';
+    const filename = `${safeCompany}_cover_letter.docx`;
+
+    const docxBuffer = await buildPlainDocx(aiDoc.content);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(docxBuffer);
+  } catch (err) {
+    console.error('Cover letter download error:', err);
+    res.status(500).json({ error: 'Failed to generate cover letter document.' });
   }
 });
 
@@ -186,7 +362,12 @@ Respond with ONLY a valid JSON object in this exact format (no markdown, no expl
 
     const rawContent = await callClaude(messages, system);
     const cleaned = stripMarkdownFences(rawContent);
-    const parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error('AI returned malformed data. Please try again.');
+    }
 
     db.prepare(`
       INSERT INTO ai_documents (job_id, user_id, type, content)
@@ -195,9 +376,7 @@ Respond with ONLY a valid JSON object in this exact format (no markdown, no expl
 
     res.json(parsed);
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ error: err.message });
-    }
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Match score error:', err);
     res.status(500).json({ error: err.message || 'Failed to analyze match score.' });
   }
@@ -244,7 +423,12 @@ Include 8-10 questions covering behavioral, technical, and situational types. In
 
     const rawContent = await callClaude(messages, system);
     const cleaned = stripMarkdownFences(rawContent);
-    const parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error('AI returned malformed data. Please try again.');
+    }
 
     db.prepare(`
       INSERT INTO ai_documents (job_id, user_id, type, content)
@@ -253,9 +437,7 @@ Include 8-10 questions covering behavioral, technical, and situational types. In
 
     res.json(parsed);
   } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ error: err.message });
-    }
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Interview prep error:', err);
     res.status(500).json({ error: err.message || 'Failed to generate interview prep.' });
   }
