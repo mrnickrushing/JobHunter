@@ -88,4 +88,13 @@ db.exec(`
   );
 `);
 
+// Migrations: add file storage columns to resumes if not present
+['file_data BLOB', 'file_type TEXT', 'original_name TEXT'].forEach(col => {
+  try {
+    db.exec(`ALTER TABLE resumes ADD COLUMN ${col}`);
+  } catch (e) {
+    // Column already exists — safe to ignore
+  }
+});
+
 module.exports = db;
