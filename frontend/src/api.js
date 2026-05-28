@@ -35,6 +35,36 @@ async function request(path, options = {}) {
   return data;
 }
 
+/**
+ * Makes a request that returns a binary blob and triggers a file download.
+ */
+async function downloadRequest(path, body, filename) {
+  const token = getToken();
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed with status ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // Auth API
 export const auth = {
   login: (email, password) =>
@@ -116,11 +146,33 @@ export const resumes = {
 
   get: (id) => request(`/api/resumes/${id}`),
 
-  create: (data) =>
-    request('/api/resumes', {
+  /**
+   * Upload a resume file. Accepts { name: string, file: File }.
+   * Uses multipart/form-data — no Content-Type header override.
+   */
+  create: ({ name, file }) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('resume', file);
+    return fetch(`${BASE_URL}/api/resumes`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Do NOT set Content-Type — browser sets it with the multipart boundary
+      },
+      body: formData,
+    }).then(async (res) => {
+      if (res.status === 401) {
+        localStorage.removeItem('jt_token');
+        window.location.href = '/login';
+        throw new Error('Session expired.');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed.');
+      return data;
+    });
+  },
 
   update: (id, data) =>
     request(`/api/resumes/${id}`, {
@@ -133,6 +185,13 @@ export const resumes = {
 
   setDefault: (id) =>
     request(`/api/resumes/${id}/default`, { method: 'PUT' }),
+
+  downloadOriginal: (id) => {
+    const token = getToken();
+    const a = document.createElement('a');
+    a.href = `${BASE_URL}/api/resumes/${id}/download?token=${encodeURIComponent(token || '')}`;
+    a.click();
+  },
 };
 
 // AI API
@@ -143,11 +202,32 @@ export const ai = {
       body: JSON.stringify({ jobId, resumeId }),
     }),
 
+  /**
+   * Generates a format-preserving DOCX and triggers a browser download.
+   * If the original resume was a DOCX, the output matches its formatting.
+   */
+  downloadTailoredResume: (jobId, resumeId, companyName) =>
+    downloadRequest(
+      '/api/ai/tailor-resume/download',
+      { jobId, resumeId },
+      `${(companyName || 'company').replace(/[^a-z0-9]/gi, '_')}_tailored_resume.docx`
+    ),
+
   coverLetter: (jobId, resumeId) =>
     request('/api/ai/cover-letter', {
       method: 'POST',
       body: JSON.stringify({ jobId, resumeId }),
     }),
+
+  /**
+   * Generates the cover letter as a DOCX and triggers a browser download.
+   */
+  downloadCoverLetter: (jobId, companyName) =>
+    downloadRequest(
+      '/api/ai/cover-letter/download',
+      { jobId },
+      `${(companyName || 'company').replace(/[^a-z0-9]/gi, '_')}_cover_letter.docx`
+    ),
 
   matchScore: (jobId, resumeId) =>
     request('/api/ai/match-score', {
