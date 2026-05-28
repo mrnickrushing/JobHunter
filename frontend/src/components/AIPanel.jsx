@@ -4,13 +4,15 @@ import styles from './AIPanel.module.css';
 
 const TABS = ['Match Score', 'Tailor Resume', 'Cover Letter', 'Interview Prep'];
 
-export default function AIPanel({ jobId }) {
+export default function AIPanel({ jobId, jobCompany }) {
   const [activeTab, setActiveTab] = useState(0);
   const [resumes, setResumes] = useState([]);
   const [selectedResume, setSelectedResume] = useState('');
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [results, setResults] = useState({});
   const [error, setError] = useState('');
+  const [downloadNote, setDownloadNote] = useState('');
 
   useEffect(() => {
     resumesApi.list().then(data => {
@@ -35,6 +37,30 @@ export default function AIPanel({ jobId }) {
     }).catch(() => {});
   }, [jobId]);
 
+  /**
+   * Triggers a DOCX download for an already-generated document.
+   * For tailored_resume: uses the original DOCX as a formatting template if available,
+   * injecting Claude's tailored text into the original XML structure.
+   * For cover_letter: generates a clean DOCX.
+   */
+  async function downloadDocx(type) {
+    setDownloading(true);
+    setDownloadNote('');
+    try {
+      if (type === 'tailored_resume') {
+        await ai.downloadTailoredResume(jobId, selectedResume, jobCompany);
+      } else if (type === 'cover_letter') {
+        await ai.downloadCoverLetter(jobId, jobCompany);
+      }
+      setDownloadNote('\u2713 Downloaded');
+      setTimeout(() => setDownloadNote(''), 3000);
+    } catch (err) {
+      setError(err.message || 'Download failed.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function runAI(action) {
     if (!selectedResume) {
       setError('Please select a resume first.');
@@ -42,6 +68,7 @@ export default function AIPanel({ jobId }) {
     }
     setLoading(true);
     setError('');
+    setDownloadNote('');
     try {
       let result;
       if (action === 'match_score') result = await ai.matchScore(jobId, selectedResume);
@@ -51,6 +78,10 @@ export default function AIPanel({ jobId }) {
 
       if (action === 'tailored_resume' || action === 'cover_letter') {
         setResults(prev => ({ ...prev, [action]: result.content }));
+        // Automatically trigger DOCX download immediately after generation
+        setLoading(false);
+        await downloadDocx(action);
+        return;
       } else {
         setResults(prev => ({ ...prev, [action]: result }));
       }
@@ -70,7 +101,7 @@ export default function AIPanel({ jobId }) {
       <select
         value={selectedResume}
         onChange={e => setSelectedResume(e.target.value)}
-        disabled={loading}
+        disabled={loading || downloading}
       >
         <option value="">Select a resume...</option>
         {resumes.map(r => (
@@ -82,6 +113,8 @@ export default function AIPanel({ jobId }) {
     </div>
   );
 
+  const isWorking = loading || downloading;
+
   return (
     <div className={styles.panel}>
       <div className={styles.tabs}>
@@ -89,7 +122,7 @@ export default function AIPanel({ jobId }) {
           <button
             key={tab}
             className={`${styles.tab} ${activeTab === i ? styles.tabActive : ''}`}
-            onClick={() => { setActiveTab(i); setError(''); }}
+            onClick={() => { setActiveTab(i); setError(''); setDownloadNote(''); }}
           >
             {tab}
           </button>
@@ -98,6 +131,7 @@ export default function AIPanel({ jobId }) {
 
       <div className={styles.body}>
         {error && <div className={styles.error}>{error}</div>}
+        {downloadNote && <div className={styles.downloadNote}>{downloadNote}</div>}
 
         {activeTab === 0 && (
           <div className={styles.section}>
@@ -105,7 +139,7 @@ export default function AIPanel({ jobId }) {
             <button
               className={styles.runBtn}
               onClick={() => runAI('match_score')}
-              disabled={loading}
+              disabled={isWorking}
             >
               {loading ? <span className="spinner" /> : null}
               {loading ? 'Analyzing...' : 'Analyze Match'}
@@ -122,16 +156,30 @@ export default function AIPanel({ jobId }) {
             <button
               className={styles.runBtn}
               onClick={() => runAI('tailored_resume')}
-              disabled={loading}
+              disabled={isWorking}
             >
               {loading ? <span className="spinner" /> : null}
-              {loading ? 'Tailoring...' : 'Tailor Resume'}
+              {loading ? 'Tailoring...' : downloading ? 'Downloading...' : 'Tailor + Download Resume'}
             </button>
+            <p className={styles.hint}>
+              Generates a job-tailored version and automatically downloads it as a <strong>.docx</strong> file,
+              preserving your original resume’s formatting.
+            </p>
             {results.tailored_resume && (
               <div className={styles.textResult}>
                 <div className={styles.resultHeader}>
                   <span className={styles.resultLabel}>Tailored Resume</span>
-                  <button className={styles.copyBtn} onClick={() => copyText(results.tailored_resume)}>Copy</button>
+                  <div className={styles.resultActions}>
+                    <button
+                      className={styles.downloadBtn}
+                      onClick={() => downloadDocx('tailored_resume')}
+                      disabled={downloading}
+                      title="Re-download as Word document"
+                    >
+                      {downloading ? 'Downloading...' : '\u2913 Re-download .docx'}
+                    </button>
+                    <button className={styles.copyBtn} onClick={() => copyText(results.tailored_resume)}>Copy</button>
+                  </div>
                 </div>
                 <textarea
                   className={styles.resultTextarea}
@@ -150,16 +198,29 @@ export default function AIPanel({ jobId }) {
             <button
               className={styles.runBtn}
               onClick={() => runAI('cover_letter')}
-              disabled={loading}
+              disabled={isWorking}
             >
               {loading ? <span className="spinner" /> : null}
-              {loading ? 'Writing...' : 'Generate Cover Letter'}
+              {loading ? 'Writing...' : downloading ? 'Downloading...' : 'Generate + Download Cover Letter'}
             </button>
+            <p className={styles.hint}>
+              Writes a personalized cover letter and automatically downloads it as a <strong>.docx</strong> file.
+            </p>
             {results.cover_letter && (
               <div className={styles.textResult}>
                 <div className={styles.resultHeader}>
                   <span className={styles.resultLabel}>Cover Letter</span>
-                  <button className={styles.copyBtn} onClick={() => copyText(results.cover_letter)}>Copy</button>
+                  <div className={styles.resultActions}>
+                    <button
+                      className={styles.downloadBtn}
+                      onClick={() => downloadDocx('cover_letter')}
+                      disabled={downloading}
+                      title="Re-download as Word document"
+                    >
+                      {downloading ? 'Downloading...' : '\u2913 Re-download .docx'}
+                    </button>
+                    <button className={styles.copyBtn} onClick={() => copyText(results.cover_letter)}>Copy</button>
+                  </div>
                 </div>
                 <textarea
                   className={styles.resultTextarea}
@@ -178,7 +239,7 @@ export default function AIPanel({ jobId }) {
             <button
               className={styles.runBtn}
               onClick={() => runAI('interview_prep')}
-              disabled={loading}
+              disabled={isWorking}
             >
               {loading ? <span className="spinner" /> : null}
               {loading ? 'Preparing...' : 'Generate Prep'}
@@ -242,7 +303,7 @@ function InterviewPrepResult({ data }) {
                 onClick={() => setOpenQ(openQ === i ? null : i)}
               >
                 <span>{q.question}</span>
-                <span className={styles.chevron}>{openQ === i ? '▲' : '▼'}</span>
+                <span className={styles.chevron}>{openQ === i ? '\u25b2' : '\u25bc'}</span>
               </button>
               {openQ === i && q.answer_framework && (
                 <div className={styles.answerFramework}>{q.answer_framework}</div>

@@ -232,7 +232,7 @@ export default function JobDetail() {
                   </select>
                   <input value={newEvent.title} onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))} placeholder="Event title *" required />
                 </div>
-                <input value={newEvent.scheduled_at} onChange={e => setNewEvent(p => ({ ...p, scheduled_at: e.target.value }))} type="datetime-local" />
+                <input value={newEvent.scheduled_at} onChange={e => setNewEvent(p => ({ ...p, scheduled_at: e.target.value })} type="datetime-local" />
                 <textarea value={newEvent.notes} onChange={e => setNewEvent(p => ({ ...p, notes: e.target.value }))} placeholder="Notes..." rows={2} />
                 <button type="submit" className={styles.submitSmall} disabled={addingEvent}>
                   {addingEvent ? 'Adding...' : 'Add Event'}
@@ -261,10 +261,10 @@ export default function JobDetail() {
           </div>
         </div>
 
-        {/* Right sidebar: AI Panel */}
+        {/* Right sidebar: AI Panel — pass company name for DOCX filename */}
         <div className={styles.sidebar}>
           <h3 className={styles.sidebarTitle}>AI Assistant</h3>
-          <AIPanel jobId={id} />
+          <AIPanel jobId={id} jobCompany={job.company} />
         </div>
       </div>
     </div>

@@ -6,207 +6,176 @@ const db = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
-
-// All routes require authentication
 router.use(authMiddleware);
 
-const ALLOWED_MIME_TYPES = [
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-];
-
+// ─── Multer: memory storage, 5 MB limit, PDF + DOCX only ───────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only PDF and DOCX files are accepted.'));
-    }
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Only PDF and DOCX files are accepted.'));
   },
 });
 
-// GET /api/resumes - list all resumes for user (exclude binary blob from list)
+// GET /api/resumes
 router.get('/', (req, res) => {
   try {
     const resumes = db.prepare(
-      'SELECT id, user_id, name, content, is_default, file_type, original_name, created_at, updated_at FROM resumes WHERE user_id = ? ORDER BY is_default DESC, updated_at DESC'
+      'SELECT id, user_id, name, content, file_type, original_name, is_default, created_at, updated_at FROM resumes WHERE user_id = ? ORDER BY is_default DESC, updated_at DESC'
     ).all(req.user.id);
     res.json({ resumes });
   } catch (err) {
-    console.error('List resumes error:', err);
     res.status(500).json({ error: 'Failed to fetch resumes.' });
   }
 });
 
-// POST /api/resumes - upload a resume file (multipart/form-data)
-router.post('/', upload.single('resume'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'A resume file (PDF or DOCX) is required.' });
-    }
-
-    const { name } = req.body;
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: 'Resume name is required.' });
-    }
-
-    const file = req.file;
-    let textContent = '';
-
-    if (file.mimetype === 'application/pdf') {
-      const result = await pdfParse(file.buffer);
-      textContent = result.text;
-    } else {
-      // DOCX
-      const result = await mammoth.extractRawText({ buffer: file.buffer });
-      textContent = result.value;
-    }
-
-    if (!textContent.trim()) {
-      return res.status(400).json({ error: 'Could not extract text from this file. Make sure it is not a scanned image.' });
-    }
-
-    // First resume becomes default
-    const count = db.prepare('SELECT COUNT(*) as cnt FROM resumes WHERE user_id = ?').get(req.user.id);
-    const isDefault = count.cnt === 0 ? 1 : 0;
-
-    const result = db.prepare(`
-      INSERT INTO resumes (user_id, name, content, is_default, file_data, file_type, original_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      req.user.id,
-      name.trim(),
-      textContent,
-      isDefault,
-      file.buffer,
-      file.mimetype,
-      file.originalname
-    );
-
-    const resume = db.prepare(
-      'SELECT id, user_id, name, content, is_default, file_type, original_name, created_at, updated_at FROM resumes WHERE id = ?'
-    ).get(result.lastInsertRowid);
-
-    res.status(201).json({ resume });
-  } catch (err) {
-    if (err.message && err.message.includes('Only PDF')) {
-      return res.status(400).json({ error: err.message });
-    }
-    console.error('Create resume error:', err);
-    res.status(500).json({ error: 'Failed to upload resume.' });
-  }
-});
-
-// GET /api/resumes/:id - get single resume (no binary blob)
+// GET /api/resumes/:id
 router.get('/:id', (req, res) => {
   try {
     const resume = db.prepare(
-      'SELECT id, user_id, name, content, is_default, file_type, original_name, created_at, updated_at FROM resumes WHERE id = ? AND user_id = ?'
+      'SELECT id, user_id, name, content, file_type, original_name, is_default, created_at, updated_at FROM resumes WHERE id = ? AND user_id = ?'
     ).get(req.params.id, req.user.id);
-    if (!resume) {
-      return res.status(404).json({ error: 'Resume not found.' });
-    }
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
     res.json({ resume });
   } catch (err) {
-    console.error('Get resume error:', err);
     res.status(500).json({ error: 'Failed to fetch resume.' });
   }
 });
 
-// GET /api/resumes/:id/download - download the original uploaded file
+// GET /api/resumes/:id/download — serves the original uploaded file
 router.get('/:id/download', (req, res) => {
   try {
+    // Support token in query string for direct <a href> downloads
+    const jwt = require('jsonwebtoken');
+    const config = require('../config');
+    const token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
+    let userId;
+    try {
+      const decoded = jwt.verify(token, config.JWT_SECRET);
+      userId = decoded.id || decoded.userId;
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized.' });
+    }
+
     const resume = db.prepare(
       'SELECT file_data, file_type, original_name FROM resumes WHERE id = ? AND user_id = ?'
-    ).get(req.params.id, req.user.id);
+    ).get(req.params.id, userId);
+
     if (!resume || !resume.file_data) {
       return res.status(404).json({ error: 'Original file not found.' });
     }
-    const ext = resume.file_type === 'application/pdf' ? '.pdf' : '.docx';
-    const filename = resume.original_name || `resume${ext}`;
+
     res.set({
       'Content-Type': resume.file_type,
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${resume.original_name || 'resume'}"`,
     });
     res.send(resume.file_data);
   } catch (err) {
-    console.error('Download resume error:', err);
-    res.status(500).json({ error: 'Failed to download resume.' });
+    res.status(500).json({ error: 'Failed to download file.' });
   }
 });
 
-// PUT /api/resumes/:id - update resume name only
-router.put('/:id', (req, res) => {
+// POST /api/resumes — upload a PDF or DOCX, extract text automatically
+router.post('/', upload.single('resume'), async (req, res) => {
   try {
-    const resume = db.prepare('SELECT * FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-    if (!resume) {
-      return res.status(404).json({ error: 'Resume not found.' });
+    const { name } = req.body;
+    const file = req.file;
+
+    if (!name?.trim()) return res.status(400).json({ error: 'Resume name is required.' });
+    if (!file) return res.status(400).json({ error: 'A PDF or DOCX file is required.' });
+
+    // Extract plain text for AI use
+    let textContent = '';
+    if (file.mimetype === 'application/pdf') {
+      const result = await pdfParse(file.buffer);
+      textContent = result.text || '';
+    } else {
+      // DOCX
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      textContent = result.value || '';
     }
 
-    const { name } = req.body;
+    // Check if this user has no resumes yet — make first one the default
+    const existingCount = db.prepare('SELECT COUNT(*) as cnt FROM resumes WHERE user_id = ?').get(req.user.id);
+    const isDefault = existingCount.cnt === 0 ? 1 : 0;
 
-    db.prepare(
-      'UPDATE resumes SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
-    ).run(
-      name !== undefined ? name.trim() : resume.name,
-      req.params.id,
-      req.user.id
+    const stmt = db.prepare(`
+      INSERT INTO resumes (user_id, name, content, file_data, file_type, original_name, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `);
+    const info = stmt.run(
+      req.user.id,
+      name.trim(),
+      textContent,
+      file.buffer,
+      file.mimetype,
+      file.originalname,
+      isDefault
     );
 
-    const updatedResume = db.prepare(
-      'SELECT id, user_id, name, content, is_default, file_type, original_name, created_at, updated_at FROM resumes WHERE id = ?'
-    ).get(req.params.id);
-    res.json({ resume: updatedResume });
+    const resume = db.prepare(
+      'SELECT id, user_id, name, content, file_type, original_name, is_default, created_at, updated_at FROM resumes WHERE id = ?'
+    ).get(info.lastInsertRowid);
+
+    res.status(201).json({ resume });
   } catch (err) {
-    console.error('Update resume error:', err);
+    console.error('Resume upload error:', err);
+    res.status(500).json({ error: err.message || 'Failed to process resume.' });
+  }
+});
+
+// PUT /api/resumes/:id — update name and/or content
+router.put('/:id', (req, res) => {
+  try {
+    const { name, content } = req.body;
+    const resume = db.prepare('SELECT * FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
+
+    db.prepare(
+      "UPDATE resumes SET name = ?, content = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).run(name ?? resume.name, content ?? resume.content, req.params.id, req.user.id);
+
+    const updated = db.prepare(
+      'SELECT id, user_id, name, content, file_type, original_name, is_default, created_at, updated_at FROM resumes WHERE id = ?'
+    ).get(req.params.id);
+    res.json({ resume: updated });
+  } catch (err) {
     res.status(500).json({ error: 'Failed to update resume.' });
+  }
+});
+
+// PUT /api/resumes/:id/default
+router.put('/:id/default', (req, res) => {
+  try {
+    const resume = db.prepare('SELECT id FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
+
+    db.prepare('UPDATE resumes SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+    db.prepare("UPDATE resumes SET is_default = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+
+    const updated = db.prepare(
+      'SELECT id, user_id, name, content, file_type, original_name, is_default, created_at, updated_at FROM resumes WHERE id = ?'
+    ).get(req.params.id);
+    res.json({ resume: updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to set default resume.' });
   }
 });
 
 // DELETE /api/resumes/:id
 router.delete('/:id', (req, res) => {
   try {
-    const resume = db.prepare('SELECT * FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-    if (!resume) {
-      return res.status(404).json({ error: 'Resume not found.' });
-    }
-
-    db.prepare('DELETE FROM resumes WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
-
-    if (resume.is_default) {
-      const nextResume = db.prepare('SELECT id FROM resumes WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1').get(req.user.id);
-      if (nextResume) {
-        db.prepare('UPDATE resumes SET is_default = 1 WHERE id = ?').run(nextResume.id);
-      }
-    }
-
-    res.json({ message: 'Resume deleted successfully.' });
+    const resume = db.prepare('SELECT id FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found.' });
+    db.prepare('DELETE FROM resumes WHERE id = ?').run(req.params.id);
+    res.json({ message: 'Resume deleted.' });
   } catch (err) {
-    console.error('Delete resume error:', err);
     res.status(500).json({ error: 'Failed to delete resume.' });
-  }
-});
-
-// PUT /api/resumes/:id/default - set as default
-router.put('/:id/default', (req, res) => {
-  try {
-    const resume = db.prepare('SELECT * FROM resumes WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-    if (!resume) {
-      return res.status(404).json({ error: 'Resume not found.' });
-    }
-
-    db.prepare('UPDATE resumes SET is_default = 0 WHERE user_id = ?').run(req.user.id);
-    db.prepare('UPDATE resumes SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
-
-    const updatedResume = db.prepare(
-      'SELECT id, user_id, name, content, is_default, file_type, original_name, created_at, updated_at FROM resumes WHERE id = ?'
-    ).get(req.params.id);
-    res.json({ resume: updatedResume });
-  } catch (err) {
-    console.error('Set default resume error:', err);
-    res.status(500).json({ error: 'Failed to set default resume.' });
   }
 });
 
