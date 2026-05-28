@@ -4,7 +4,6 @@ const config = require('./config');
 
 const dbPath = config.DATABASE_PATH || path.join(__dirname, '../../data/jobhunter.db');
 
-// Ensure data directory exists
 const fs = require('fs');
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
@@ -13,7 +12,6 @@ if (!fs.existsSync(dataDir)) {
 
 const db = new Database(dbPath);
 
-// Enable WAL mode for better concurrent access
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -41,6 +39,9 @@ db.exec(`
     notes TEXT,
     salary_min REAL,
     salary_max REAL,
+    salary_currency TEXT DEFAULT 'USD',
+    applied_at TEXT,
+    deadline TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -90,14 +91,16 @@ db.exec(`
 `);
 
 // ─── Migrations: add columns to existing databases ─────────────────────────
-// Safe to run on every startup — ALTER TABLE fails silently if column exists.
 const migrations = [
   'ALTER TABLE resumes ADD COLUMN file_data BLOB',
   'ALTER TABLE resumes ADD COLUMN file_type TEXT',
   'ALTER TABLE resumes ADD COLUMN original_name TEXT',
   'ALTER TABLE jobs ADD COLUMN salary_min REAL',
   'ALTER TABLE jobs ADD COLUMN salary_max REAL',
+  'ALTER TABLE jobs ADD COLUMN salary_currency TEXT',
   'ALTER TABLE jobs ADD COLUMN source TEXT',
+  'ALTER TABLE jobs ADD COLUMN applied_at TEXT',
+  'ALTER TABLE jobs ADD COLUMN deadline TEXT',
 ];
 
 for (const sql of migrations) {
