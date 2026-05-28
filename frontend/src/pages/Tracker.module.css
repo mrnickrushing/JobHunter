@@ -1,0 +1,227 @@
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.addBtn {
+  padding: 9px 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.addBtn:hover {
+  background: var(--accent-hover);
+}
+
+.error {
+  padding: 12px 16px;
+  background: var(--danger-dim);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.filterSelect {
+  width: auto;
+  min-width: 160px;
+}
+
+.viewToggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  margin-left: auto;
+}
+
+.viewBtn {
+  padding: 6px 14px;
+  border-radius: 5px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.viewBtn:hover {
+  color: var(--text-primary);
+}
+
+.viewBtnActive {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Loading */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 300px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+/* List view */
+.listContainer {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.th:hover {
+  color: var(--text-secondary);
+}
+
+.sortIcon {
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
+.tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tr:hover {
+  background: var(--bg-hover);
+}
+
+.tr:not(:last-child) .td {
+  border-bottom: 1px solid var(--border);
+}
+
+.td {
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.jobTitleCell {
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.emptyState {
+  text-align: center;
+  padding: 64px 32px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 20px 16px;
+  }
+
+  .filterSelect {
+    width: 100%;
+    max-width: none;
+  }
+
+  .searchInput {
+    max-width: none;
+    width: 100%;
+  }
+
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .viewToggle {
+    margin-left: 0;
+    align-self: flex-start;
+  }
+}

@@ -1,0 +1,10 @@
+[build]
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "node backend/server.js"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+
+[[volumes]]
+mountPath = "/app/data"
