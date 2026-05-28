@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { resumes as resumesApi } from '../api.js';
+import { resumes as resumesApi, validateResumeFile } from '../api.js';
 import styles from './Resumes.module.css';
 
 export default function Resumes() {
@@ -8,17 +8,19 @@ export default function Resumes() {
   const [editName, setEditName] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reuploading, setReuploading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
+  const [reuploadFile, setReuploadFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [reuploadDragOver, setReuploadDragOver] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const fileInputRef = useRef(null);
+  const reuploadInputRef = useRef(null);
 
-  useEffect(() => {
-    loadResumes();
-  }, []);
+  useEffect(() => { loadResumes(); }, []);
 
   async function loadResumes() {
     try {
@@ -33,6 +35,7 @@ export default function Resumes() {
     setError('');
     setSaved(false);
     setCreating(false);
+    setReuploadFile(null);
   }
 
   function startNew() {
@@ -43,29 +46,28 @@ export default function Resumes() {
     setError('');
   }
 
-  function handleFileDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
+  // ── File selection helpers ──────────────────────────────────────────────
+
+  function handleFileSelect(file, isReupload = false) {
+    const err = validateResumeFile(file);
+    if (err) { setError(err); return; }
+    setError('');
+    if (isReupload) {
+      setReuploadFile(file);
+    } else {
+      setUploadFile(file);
+      if (!newName.trim()) setNewName(file.name.replace(/\.(pdf|docx)$/i, ''));
+    }
   }
 
-  function handleFileSelect(file) {
-    const allowed = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    if (!allowed.includes(file.type)) {
-      setError('Only PDF and DOCX files are accepted.');
-      return;
-    }
-    setUploadFile(file);
-    // Auto-fill name from filename if blank
-    if (!newName.trim()) {
-      setNewName(file.name.replace(/\.(pdf|docx)$/i, ''));
-    }
-    setError('');
+  function handleFileDrop(e, isReupload = false) {
+    e.preventDefault();
+    isReupload ? setReuploadDragOver(false) : setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file, isReupload);
   }
+
+  // ── Create ──────────────────────────────────────────────────────────────
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -86,6 +88,8 @@ export default function Resumes() {
     }
   }
 
+  // ── Save name ───────────────────────────────────────────────────────────
+
   async function handleSaveName() {
     if (!selected) return;
     setSaving(true);
@@ -103,6 +107,28 @@ export default function Resumes() {
     }
   }
 
+  // ── Re-upload (replace file) ────────────────────────────────────────────
+
+  async function handleReupload() {
+    if (!selected || !reuploadFile) return;
+    setReuploading(true);
+    setError('');
+    try {
+      const data = await resumesApi.reupload({ id: selected.id, file: reuploadFile });
+      setSelected(data.resume);
+      setList(prev => prev.map(r => r.id === data.resume.id ? data.resume : r));
+      setReuploadFile(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err.message || 'Failed to replace resume file.');
+    } finally {
+      setReuploading(false);
+    }
+  }
+
+  // ── Set default ─────────────────────────────────────────────────────────
+
   async function handleSetDefault() {
     if (!selected) return;
     try {
@@ -113,6 +139,8 @@ export default function Resumes() {
       setError(err.message || 'Failed to set default.');
     }
   }
+
+  // ── Delete ──────────────────────────────────────────────────────────────
 
   async function handleDelete() {
     if (!selected) return;
@@ -141,7 +169,7 @@ export default function Resumes() {
       </div>
 
       <div className={styles.layout}>
-        {/* Left list */}
+        {/* ── Left list ── */}
         <div className={styles.listPanel}>
           {list.length === 0 && !creating && (
             <div className={styles.emptyList}>
@@ -158,9 +186,7 @@ export default function Resumes() {
               <div className={styles.listItemName}>{r.name}</div>
               <div className={styles.listItemMeta}>
                 {r.is_default ? <span className={styles.defaultBadge}>Default</span> : null}
-                {r.file_type && (
-                  <span className={styles.fileTypeBadge}>{fileLabel(r.file_type)}</span>
-                )}
+                {r.file_type && <span className={styles.fileTypeBadge}>{fileLabel(r.file_type)}</span>}
                 <span className={styles.listItemDate}>
                   {new Date(r.updated_at).toLocaleDateString()}
                 </span>
@@ -169,7 +195,7 @@ export default function Resumes() {
           ))}
         </div>
 
-        {/* Right panel */}
+        {/* ── Right panel ── */}
         <div className={styles.editor}>
           {!selected && !creating && (
             <div className={styles.emptyEditor}>
@@ -182,6 +208,7 @@ export default function Resumes() {
             <>
               {error && <div className={styles.error}>{error}</div>}
 
+              {/* ── Create form ── */}
               {creating ? (
                 <form onSubmit={handleCreate} className={styles.createForm}>
                   <div className={styles.nameRow}>
@@ -194,12 +221,11 @@ export default function Resumes() {
                     />
                   </div>
 
-                  {/* Drop zone */}
                   <div
                     className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ''} ${uploadFile ? styles.dropZoneHasFile : ''}`}
                     onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
-                    onDrop={handleFileDrop}
+                    onDrop={e => handleFileDrop(e, false)}
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <input
@@ -207,7 +233,7 @@ export default function Resumes() {
                       type="file"
                       accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       style={{ display: 'none' }}
-                      onChange={e => e.target.files[0] && handleFileSelect(e.target.files[0])}
+                      onChange={e => e.target.files[0] && handleFileSelect(e.target.files[0], false)}
                     />
                     {uploadFile ? (
                       <>
@@ -221,7 +247,7 @@ export default function Resumes() {
                       <>
                         <div className={styles.dropZoneIcon}>📂</div>
                         <div className={styles.dropZoneText}>Drag &amp; drop or click to upload</div>
-                        <div className={styles.dropZoneSub}>PDF or DOCX &mdash; max 5MB</div>
+                        <div className={styles.dropZoneSub}>PDF or DOCX &mdash; max 5 MB</div>
                       </>
                     )}
                   </div>
@@ -233,7 +259,9 @@ export default function Resumes() {
                     </button>
                   </div>
                 </form>
+
               ) : (
+                /* ── Edit / view existing ── */
                 <div className={styles.editView}>
                   <div className={styles.nameRow}>
                     <input
@@ -249,11 +277,10 @@ export default function Resumes() {
                       </button>
                     )}
                   </div>
+
                   <div className={styles.editorActions}>
                     <span className={styles.wordCount}>{wordCount} words extracted</span>
-                    {selected?.file_type && (
-                      <span className={styles.fileTypeBadge}>{fileLabel(selected.file_type)}</span>
-                    )}
+                    {selected?.file_type && <span className={styles.fileTypeBadge}>{fileLabel(selected.file_type)}</span>}
                     {selected?.original_name && (
                       <span className={styles.origName} title={selected.original_name}>
                         {selected.original_name}
@@ -268,7 +295,59 @@ export default function Resumes() {
                     </button>
                   </div>
 
-                  {/* Extracted text preview */}
+                  {/* ── Re-upload zone ── */}
+                  <div className={styles.reuploadSection}>
+                    <div className={styles.reuploadLabel}>Replace File</div>
+                    <div
+                      className={`${styles.dropZone} ${styles.dropZoneSmall} ${reuploadDragOver ? styles.dropZoneActive : ''} ${reuploadFile ? styles.dropZoneHasFile : ''}`}
+                      onDragOver={e => { e.preventDefault(); setReuploadDragOver(true); }}
+                      onDragLeave={() => setReuploadDragOver(false)}
+                      onDrop={e => handleFileDrop(e, true)}
+                      onClick={() => reuploadInputRef.current?.click()}
+                    >
+                      <input
+                        ref={reuploadInputRef}
+                        type="file"
+                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        style={{ display: 'none' }}
+                        onChange={e => e.target.files[0] && handleFileSelect(e.target.files[0], true)}
+                      />
+                      {reuploadFile ? (
+                        <>
+                          <div className={styles.dropZoneFileIcon}>✅</div>
+                          <div className={styles.dropZoneFileName}>{reuploadFile.name}</div>
+                          <div className={styles.dropZoneFileSub}>
+                            {(reuploadFile.size / 1024).toFixed(0)} KB &mdash; click to change
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className={styles.dropZoneIcon}>🔄</div>
+                          <div className={styles.dropZoneText}>Drop a new PDF or DOCX to replace</div>
+                          <div className={styles.dropZoneSub}>max 5 MB &mdash; re-extracts text automatically</div>
+                        </>
+                      )}
+                    </div>
+                    {reuploadFile && (
+                      <div className={styles.reuploadActions}>
+                        <button
+                          className={styles.cancelBtn}
+                          onClick={() => { setReuploadFile(null); setError(''); }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className={styles.saveBtn}
+                          onClick={handleReupload}
+                          disabled={reuploading}
+                        >
+                          {reuploading ? 'Replacing...' : 'Replace File'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Extracted text preview ── */}
                   <div className={styles.contentPreview}>
                     <div className={styles.contentPreviewLabel}>Extracted Text Preview</div>
                     <pre className={styles.contentPre}>{selected?.content}</pre>

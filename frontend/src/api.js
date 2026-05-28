@@ -1,5 +1,11 @@
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
+const MAX_RESUME_SIZE = 5 * 1024 * 1024; // 5 MB — mirrors backend limit
+const ALLOWED_RESUME_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+
 function getToken() {
   return localStorage.getItem('jt_token');
 }
@@ -11,14 +17,9 @@ async function request(path, options = {}) {
     ...(options.headers || {}),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
 
   if (response.status === 401) {
     localStorage.removeItem('jt_token');
@@ -27,16 +28,12 @@ async function request(path, options = {}) {
   }
 
   const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed with status ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(data.error || `Request failed with status ${response.status}`);
   return data;
 }
 
 /**
- * Makes a request that returns a binary blob and triggers a file download.
+ * Makes a POST request that returns a binary blob and triggers a browser file download.
  */
 async function downloadRequest(path, body, filename) {
   const token = getToken();
@@ -65,24 +62,32 @@ async function downloadRequest(path, body, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Auth API
+/**
+ * Validates a resume file before upload.
+ * Returns an error string or null if valid.
+ */
+export function validateResumeFile(file) {
+  if (!file) return 'Please select a file.';
+  if (!ALLOWED_RESUME_TYPES.includes(file.type)) return 'Only PDF and DOCX files are accepted.';
+  if (file.size > MAX_RESUME_SIZE) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    return `File is too large (${mb} MB). Maximum size is 5 MB.`;
+  }
+  return null;
+}
+
+// ─── Auth API ────────────────────────────────────────────────────────────
 export const auth = {
   login: (email, password) =>
-    request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
+    request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
 
   register: (name, email, password) =>
-    request('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ name, email, password }),
-    }),
+    request('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
 
   me: () => request('/api/auth/me'),
 };
 
-// Jobs API
+// ─── Jobs API ─────────────────────────────────────────────────────────────
 export const jobs = {
   list: (params = {}) => {
     const query = new URLSearchParams();
@@ -91,76 +96,47 @@ export const jobs = {
     const qs = query.toString();
     return request(`/api/jobs${qs ? '?' + qs : ''}`);
   },
-
   get: (id) => request(`/api/jobs/${id}`),
-
-  create: (data) =>
-    request('/api/jobs', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  update: (id, data) =>
-    request(`/api/jobs/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-
-  remove: (id) =>
-    request(`/api/jobs/${id}`, { method: 'DELETE' }),
+  create: (data) => request('/api/jobs', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
 
   addContact: (jobId, data) =>
-    request(`/api/jobs/${jobId}/contacts`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
+    request(`/api/jobs/${jobId}/contacts`, { method: 'POST', body: JSON.stringify(data) }),
   updateContact: (jobId, contactId, data) =>
-    request(`/api/jobs/${jobId}/contacts/${contactId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-
+    request(`/api/jobs/${jobId}/contacts/${contactId}`, { method: 'PUT', body: JSON.stringify(data) }),
   removeContact: (jobId, contactId) =>
     request(`/api/jobs/${jobId}/contacts/${contactId}`, { method: 'DELETE' }),
 
   addEvent: (jobId, data) =>
-    request(`/api/jobs/${jobId}/events`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
+    request(`/api/jobs/${jobId}/events`, { method: 'POST', body: JSON.stringify(data) }),
   updateEvent: (jobId, eventId, data) =>
-    request(`/api/jobs/${jobId}/events/${eventId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-
+    request(`/api/jobs/${jobId}/events/${eventId}`, { method: 'PUT', body: JSON.stringify(data) }),
   removeEvent: (jobId, eventId) =>
     request(`/api/jobs/${jobId}/events/${eventId}`, { method: 'DELETE' }),
 };
 
-// Resumes API
+// ─── Resumes API ──────────────────────────────────────────────────────────
 export const resumes = {
   list: () => request('/api/resumes'),
-
   get: (id) => request(`/api/resumes/${id}`),
 
   /**
-   * Upload a resume file. Accepts { name: string, file: File }.
-   * Uses multipart/form-data — no Content-Type header override.
+   * Upload a new resume. Validates file client-side before sending.
+   * Accepts { name: string, file: File }.
    */
   create: ({ name, file }) => {
+    const validationError = validateResumeFile(file);
+    if (validationError) return Promise.reject(new Error(validationError));
+
     const token = getToken();
     const formData = new FormData();
     formData.append('name', name);
     formData.append('resume', file);
+
     return fetch(`${BASE_URL}/api/resumes`, {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        // Do NOT set Content-Type — browser sets it with the multipart boundary
-      },
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: formData,
     }).then(async (res) => {
       if (res.status === 401) {
@@ -174,17 +150,37 @@ export const resumes = {
     });
   },
 
-  update: (id, data) =>
-    request(`/api/resumes/${id}`, {
+  /**
+   * Replace the file on an existing resume (re-upload).
+   * Accepts { id: number, file: File }.
+   */
+  reupload: ({ id, file }) => {
+    const validationError = validateResumeFile(file);
+    if (validationError) return Promise.reject(new Error(validationError));
+
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('resume', file);
+
+    return fetch(`${BASE_URL}/api/resumes/${id}/reupload`, {
       method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    }).then(async (res) => {
+      if (res.status === 401) {
+        localStorage.removeItem('jt_token');
+        window.location.href = '/login';
+        throw new Error('Session expired.');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Re-upload failed.');
+      return data;
+    });
+  },
 
-  remove: (id) =>
-    request(`/api/resumes/${id}`, { method: 'DELETE' }),
-
-  setDefault: (id) =>
-    request(`/api/resumes/${id}/default`, { method: 'PUT' }),
+  update: (id, data) => request(`/api/resumes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id) => request(`/api/resumes/${id}`, { method: 'DELETE' }),
+  setDefault: (id) => request(`/api/resumes/${id}/default`, { method: 'PUT' }),
 
   downloadOriginal: (id) => {
     const token = getToken();
@@ -194,17 +190,14 @@ export const resumes = {
   },
 };
 
-// AI API
+// ─── AI API ───────────────────────────────────────────────────────────────
 export const ai = {
   tailorResume: (jobId, resumeId) =>
-    request('/api/ai/tailor-resume', {
-      method: 'POST',
-      body: JSON.stringify({ jobId, resumeId }),
-    }),
+    request('/api/ai/tailor-resume', { method: 'POST', body: JSON.stringify({ jobId, resumeId }) }),
 
   /**
-   * Generates a format-preserving DOCX and triggers a browser download.
-   * If the original resume was a DOCX, the output matches its formatting.
+   * Downloads the tailored resume as a format-preserving DOCX.
+   * If the original was a DOCX, the output inherits its paragraph styles.
    */
   downloadTailoredResume: (jobId, resumeId, companyName) =>
     downloadRequest(
@@ -214,13 +207,10 @@ export const ai = {
     ),
 
   coverLetter: (jobId, resumeId) =>
-    request('/api/ai/cover-letter', {
-      method: 'POST',
-      body: JSON.stringify({ jobId, resumeId }),
-    }),
+    request('/api/ai/cover-letter', { method: 'POST', body: JSON.stringify({ jobId, resumeId }) }),
 
   /**
-   * Generates the cover letter as a DOCX and triggers a browser download.
+   * Downloads the cover letter as a DOCX with proper paragraph structure.
    */
   downloadCoverLetter: (jobId, companyName) =>
     downloadRequest(
@@ -230,21 +220,15 @@ export const ai = {
     ),
 
   matchScore: (jobId, resumeId) =>
-    request('/api/ai/match-score', {
-      method: 'POST',
-      body: JSON.stringify({ jobId, resumeId }),
-    }),
+    request('/api/ai/match-score', { method: 'POST', body: JSON.stringify({ jobId, resumeId }) }),
 
   interviewPrep: (jobId, resumeId) =>
-    request('/api/ai/interview-prep', {
-      method: 'POST',
-      body: JSON.stringify({ jobId, resumeId }),
-    }),
+    request('/api/ai/interview-prep', { method: 'POST', body: JSON.stringify({ jobId, resumeId }) }),
 
   getDocuments: (jobId) => request(`/api/ai/documents/${jobId}`),
 };
 
-// Search API
+// ─── Search API ───────────────────────────────────────────────────────────
 export const search = {
   search: (params) => {
     const query = new URLSearchParams();

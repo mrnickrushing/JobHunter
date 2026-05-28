@@ -118,7 +118,6 @@
   letter-spacing: 0.3px;
 }
 
-/* PDF / DOCX file type pill */
 .fileTypeBadge {
   font-size: 0.6875rem;
   font-weight: 600;
@@ -190,14 +189,8 @@
   color: var(--text-primary);
 }
 
-.nameInput:hover {
-  border-color: var(--border);
-}
-
-.nameInput:focus {
-  border-color: var(--accent) !important;
-  background: var(--bg-tertiary);
-}
+.nameInput:hover { border-color: var(--border); }
+.nameInput:focus { border-color: var(--accent) !important; background: var(--bg-tertiary); }
 
 .setDefaultBtn {
   flex-shrink: 0;
@@ -212,10 +205,7 @@
   transition: color 0.15s, border-color 0.15s;
 }
 
-.setDefaultBtn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
+.setDefaultBtn:hover { color: var(--accent); border-color: var(--accent); }
 
 .editorActions {
   display: flex;
@@ -233,7 +223,6 @@
   flex: 1;
 }
 
-/* Original filename label in editor toolbar */
 .origName {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -260,9 +249,7 @@
   transition: color 0.15s;
 }
 
-.cancelBtn:hover {
-  color: var(--text-primary);
-}
+.cancelBtn:hover { color: var(--text-primary); }
 
 .saveBtn {
   padding: 6px 16px;
@@ -275,14 +262,8 @@
   transition: background 0.15s, opacity 0.15s;
 }
 
-.saveBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.saveBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+.saveBtn:hover:not(:disabled) { background: var(--accent-hover); }
+.saveBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .deleteBtn {
   padding: 6px 14px;
@@ -295,16 +276,10 @@
   transition: background 0.15s;
 }
 
-.deleteBtn:hover:not(:disabled) {
-  background: var(--danger-dim);
-}
+.deleteBtn:hover:not(:disabled) { background: var(--danger-dim); }
+.deleteBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.deleteBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* ── Drag & Drop Upload Zone ───────────────────────────── */
+/* ── Drag & Drop Upload Zone ─────────────────────────────────────────── */
 .dropZone {
   margin: 20px 18px;
   border: 2px dashed var(--border);
@@ -320,11 +295,7 @@
   text-align: center;
 }
 
-.dropZone:hover {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-}
-
+.dropZone:hover,
 .dropZoneActive {
   border-color: var(--accent);
   background: var(--accent-dim);
@@ -336,40 +307,43 @@
   background: color-mix(in srgb, var(--success) 6%, var(--bg-primary));
 }
 
-.dropZoneIcon {
-  font-size: 2.25rem;
-  line-height: 1;
+/* Compact version used in the re-upload section */
+.dropZoneSmall {
+  margin: 0;
+  padding: 20px 16px;
 }
 
-.dropZoneText {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--text-primary);
+.dropZoneIcon { font-size: 2.25rem; line-height: 1; }
+.dropZoneText { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); }
+.dropZoneSub  { font-size: 0.8125rem; color: var(--text-muted); }
+.dropZoneFileIcon { font-size: 2rem; line-height: 1; }
+.dropZoneFileName { font-size: 0.9375rem; font-weight: 600; color: var(--success); word-break: break-all; }
+.dropZoneFileSub  { font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── Re-upload Section ───────────────────────────────────────────────── */
+.reuploadSection {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.dropZoneSub {
-  font-size: 0.8125rem;
-  color: var(--text-muted);
-}
-
-.dropZoneFileIcon {
-  font-size: 2rem;
-  line-height: 1;
-}
-
-.dropZoneFileName {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--success);
-  word-break: break-all;
-}
-
-.dropZoneFileSub {
+.reuploadLabel {
   font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--text-muted);
 }
 
-/* ── Extracted Text Preview ────────────────────────────── */
+.reuploadActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Extracted Text Preview ──────────────────────────────────────────── */
 .contentPreview {
   flex: 1;
   display: flex;
@@ -405,17 +379,8 @@
 }
 
 @media (max-width: 700px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
-  .listPanel {
-    max-height: 260px;
-    overflow-y: auto;
-  }
-
-  .dropZone {
-    margin: 14px 12px;
-    padding: 28px 16px;
-  }
+  .layout { grid-template-columns: 1fr; }
+  .listPanel { max-height: 260px; overflow-y: auto; }
+  .dropZone { margin: 14px 12px; padding: 28px 16px; }
+  .dropZoneSmall { margin: 0; padding: 16px 12px; }
 }
