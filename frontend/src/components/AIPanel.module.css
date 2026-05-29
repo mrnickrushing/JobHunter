@@ -115,6 +115,117 @@
   color: var(--danger);
 }
 
+/* Match Score Display — rendered markdown */
+.matchDisplay {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scoreCard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  border: 2px solid;
+}
+
+.scoreBadge {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 3px solid;
+}
+
+.scoreBig {
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scoreSlash {
+  font-size: 0.65rem;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.scoreRating {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  margin-bottom: 4px;
+}
+
+.scoreContext {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.matchSec {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.matchSecHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.725rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.matchSecBody {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mdPara {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.mdPara strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.mdBullet {
+  display: flex;
+  gap: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.mdBullet strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.mdDot {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 700;
+  margin-top: 1px;
+}
+
 /* Match Score */
 .matchResult {
   display: flex;
