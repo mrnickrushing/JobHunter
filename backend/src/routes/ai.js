@@ -279,16 +279,77 @@ router.post('/:jobId/tailor-resume', async (req, res) => {
     const { job, resumeText } = getJobAndResume(req.params.jobId, req.body.resume_id, req.user.id);
     if (!resumeText) return res.status(400).json({ error: 'No resume found. Please upload a resume first.' });
 
-    const result = await callClaude(
-      'You are an expert resume writer. You tailor resumes to specific jobs by editing content while preserving structure exactly.',
-      `Tailor this resume for the job below.
+    // Load original DOCX to extract exact paragraph list for 1:1 injection at download time
+    const originalResume = req.body.resume_id
+      ? db.prepare('SELECT file_data, file_type FROM resumes WHERE id = ? AND user_id = ?').get(req.body.resume_id, req.user.id)
+      : db.prepare('SELECT file_data, file_type FROM resumes WHERE user_id = ? AND is_default = 1').get(req.user.id);
+
+    let result = null;
+
+    if (originalResume?.file_data && originalResume.file_type === DOCX_MIME) {
+      const zip = new PizZip(Buffer.from(originalResume.file_data));
+      const docFile = zip.file('word/document.xml');
+
+      if (docFile) {
+        const docXml = docFile.asText();
+        const paragraphs = [];
+        const paraRe = /<w:p[ >][\s\S]*?<\/w:p>/g;
+        let m;
+        while ((m = paraRe.exec(docXml)) !== null) {
+          const texts = [...m[0].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(x => x[1]);
+          const text = texts.join('').trim();
+          if (text) paragraphs.push(text);
+        }
+
+        if (paragraphs.length > 0) {
+          const N = paragraphs.length;
+          const numbered = paragraphs.map((p, i) => `${i + 1}| ${p}`).join('\n');
+
+          const raw = await callClaude(
+            'You are an expert resume writer. You tailor resumes to specific jobs while preserving exact structure.',
+            `Tailor this resume for the job below. The resume has exactly ${N} lines.
+
+RULES — follow precisely:
+1. Return EXACTLY ${N} lines — one output line per input line, no more, no less
+2. Each line must start with its number and a pipe character: "1| text", "2| text", etc.
+3. Keep every section heading exactly as-is
+4. Only change wording: add job-relevant keywords, strengthen impact verbs
+5. Do NOT add or remove lines
+6. Plain text only — no markdown, no asterisks, no extra blank lines between numbered lines
+
+JOB: ${job.title} at ${job.company}
+DESCRIPTION: ${job.description || 'Not provided'}
+
+RESUME (${N} lines):
+${numbered}
+
+Return exactly ${N} numbered lines.`
+          );
+
+          // Extract only lines that start with a number pattern; ignore blank spacers Claude may add
+          const parsed = raw.split('\n')
+            .filter(l => /^\s*\d+\s*[|.)]\s*/.test(l))
+            .map(l => l.replace(/^\s*\d+\s*[|.)\s]+/, '').trimEnd());
+
+          if (parsed.length === N) {
+            result = parsed.join('\n');
+          }
+        }
+      }
+    }
+
+    if (!result) {
+      // Fallback for non-DOCX resumes or when Claude doesn't return exact paragraph count
+      result = await callClaude(
+        'You are an expert resume writer. You tailor resumes to specific jobs by editing content while preserving structure exactly.',
+        `Tailor this resume for the job below.
 
 RULES — follow these precisely:
 1. Keep every section heading exactly as-is (do not rename, reorder, or remove sections)
 2. Keep the same number of lines and bullet points as the original
-3. Only change wording: incorporate job-relevant keywords, reorder bullet points by relevance, strengthen impact verbs
+3. Only change wording: incorporate job-relevant keywords, strengthen impact verbs
 4. Do NOT add new bullet points or remove existing ones
-5. Output one line of text per original line — blank lines in the original become blank lines in your output
+5. Output one line of text per original line
 6. Return plain text only, no markdown formatting
 
 JOB: ${job.title} at ${job.company}
@@ -298,7 +359,8 @@ ORIGINAL RESUME (preserve this exact line structure):
 ${resumeText}
 
 Return the tailored resume with the identical line structure as the original.`
-    );
+      );
+    }
 
     upsertDocument(job.id, req.body.resume_id, 'tailored_resume', result, req.user.id);
     res.json({ tailored_resume: result });
