@@ -1,9 +1,12 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const PizZip = require('pizzip');
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
 const db = require('../db');
 const authMiddleware = require('../middleware/auth');
 const config = require('../config');
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -75,6 +78,57 @@ function upsertDocument(jobId, resumeId, type, content) {
     db.prepare('INSERT INTO ai_documents (job_id, resume_id, type, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(jobId, resumeId || null, type, content, now, now);
   }
+}
+
+// Inject Claude's tailored text into the original DOCX XML, preserving all
+// formatting (fonts, sizes, bold, spacing, heading styles). Only text content
+// inside <w:t> elements is replaced — all surrounding XML tags stay untouched.
+function injectIntoDocx(originalBuffer, tailoredText) {
+  const zip = new PizZip(originalBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) throw new Error('Invalid DOCX: missing word/document.xml');
+
+  let docXml = docFile.asText();
+
+  // Collect every non-empty paragraph: its raw XML block and plain-text content
+  const paragraphs = [];
+  const paraRe = /<w:p[ >][\s\S]*?<\/w:p>/g;
+  let m;
+  while ((m = paraRe.exec(docXml)) !== null) {
+    const texts = [...m[0].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(x => x[1]);
+    const text = texts.join('').trim();
+    if (text) paragraphs.push({ xml: m[0], text });
+  }
+
+  // Map Claude's output lines to original paragraphs 1-to-1
+  const tailoredLines = tailoredText.split('\n').filter(l => l.trim());
+  const limit = Math.min(paragraphs.length, tailoredLines.length);
+
+  for (let i = 0; i < limit; i++) {
+    const orig = paragraphs[i];
+    const newText = tailoredLines[i];
+    if (newText.trim() === orig.text) continue;
+
+    // Replace text in runs while keeping all formatting XML intact.
+    // First <w:t> gets the full new text; subsequent runs are cleared.
+    let firstRun = true;
+    const newParaXml = orig.xml.replace(/<w:t([^>]*)>[^<]*<\/w:t>/g, (_, attrs) => {
+      if (firstRun) {
+        firstRun = false;
+        const safe = newText
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const spaceAttr = attrs.includes('preserve') ? attrs : ` xml:space="preserve"${attrs}`;
+        return `<w:t${spaceAttr}>${safe}</w:t>`;
+      }
+      return '<w:t></w:t>';
+    });
+
+    docXml = docXml.replace(orig.xml, newParaXml);
+  }
+
+  zip.file('word/document.xml', docXml);
+  return Buffer.from(zip.generate({ type: 'arraybuffer' }));
 }
 
 function textToDocx(text, title) {
@@ -225,16 +279,24 @@ router.post('/:jobId/tailor-resume', async (req, res) => {
     if (!resumeText) return res.status(400).json({ error: 'No resume found. Please upload a resume first.' });
 
     const result = await callClaude(
-      'You are an expert resume writer. Tailor resumes to match job postings without fabricating experience.',
-      `Tailor this resume for the job below. Emphasize relevant skills, reorder bullet points by relevance, and incorporate keywords from the job description naturally.
+      'You are an expert resume writer. You tailor resumes to specific jobs by editing content while preserving structure exactly.',
+      `Tailor this resume for the job below.
+
+RULES — follow these precisely:
+1. Keep every section heading exactly as-is (do not rename, reorder, or remove sections)
+2. Keep the same number of lines and bullet points as the original
+3. Only change wording: incorporate job-relevant keywords, reorder bullet points by relevance, strengthen impact verbs
+4. Do NOT add new bullet points or remove existing ones
+5. Output one line of text per original line — blank lines in the original become blank lines in your output
+6. Return plain text only, no markdown formatting
 
 JOB: ${job.title} at ${job.company}
 DESCRIPTION: ${job.description || 'Not provided'}
 
-ORIGINAL RESUME:
+ORIGINAL RESUME (preserve this exact line structure):
 ${resumeText}
 
-Return the complete tailored resume, preserving the original format and structure.`
+Return the tailored resume with the identical line structure as the original.`
     );
 
     upsertDocument(job.id, req.body.resume_id, 'tailored_resume', result);
@@ -357,16 +419,30 @@ router.get('/:jobId/tailor-resume/download', async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     const doc = db.prepare(
-      'SELECT content FROM ai_documents WHERE job_id = ? AND type = ? ORDER BY updated_at DESC LIMIT 1'
+      'SELECT content, resume_id FROM ai_documents WHERE job_id = ? AND type = ? ORDER BY updated_at DESC LIMIT 1'
     ).get(req.params.jobId, 'tailored_resume');
 
     if (!doc || !doc.content) return res.status(404).json({ error: 'No tailored resume found. Generate one first.' });
 
-    const document = textToDocx(doc.content, `${job.title} — Tailored Resume`);
-    const buffer = await Packer.toBuffer(document);
+    // Resolve the original resume file for format preservation
+    const resumeId = req.query.resume_id || doc.resume_id;
+    const original = resumeId
+      ? db.prepare('SELECT file_data, file_type FROM resumes WHERE id = ? AND user_id = ?').get(resumeId, req.user.id)
+      : db.prepare('SELECT file_data, file_type FROM resumes WHERE user_id = ? AND is_default = 1').get(req.user.id);
+
+    let buffer;
+    if (original?.file_data && original.file_type === DOCX_MIME) {
+      // Format-preserving: inject tailored text into original DOCX XML structure
+      // Keeps fonts, sizes, bold, spacing, heading styles — only text content changes
+      buffer = injectIntoDocx(Buffer.from(original.file_data), doc.content);
+    } else {
+      // Fallback for PDF originals or missing file: generate a clean fresh DOCX
+      const document = textToDocx(doc.content, `${job.title} — Tailored Resume`);
+      buffer = await Packer.toBuffer(document);
+    }
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Type': DOCX_MIME,
       'Content-Disposition': `attachment; filename="${job.company.replace(/[^a-zA-Z0-9]/g, '-')}-resume.docx"`,
     });
     res.send(buffer);
