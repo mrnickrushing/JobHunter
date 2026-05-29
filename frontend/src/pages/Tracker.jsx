@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { jobs as jobsApi, ai as aiApi, resumes as resumesApi } from '../api.js';
 import KanbanBoard from '../components/KanbanBoard.jsx';
@@ -10,7 +10,6 @@ const STATUS_LABELS = {
   interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn',
 };
 const STATUS_ORDER = ['saved', 'applied', 'phone_screen', 'interview', 'offer', 'rejected', 'withdrawn'];
-const ALL_STATUSES = ['', ...STATUS_ORDER];
 
 function daysAgo(dateStr) {
   if (!dateStr) return '—';
@@ -67,10 +66,11 @@ export default function Tracker() {
       .finally(() => setLoading(false));
   }
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts: N=new, K=kanban, L=list, /=search, Ctrl+K=new (compat)
   useEffect(() => {
     function onKey(e) {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowModal(true); return; }
       if (e.key === 'n' || e.key === 'N') { e.preventDefault(); setShowModal(true); }
       if (e.key === 'k' || e.key === 'K') { e.preventDefault(); setView('kanban'); }
       if (e.key === 'l' || e.key === 'L') { e.preventDefault(); setView('list'); }
@@ -107,11 +107,7 @@ export default function Tracker() {
 
   async function handleStatusChange(jobId, newStatus) {
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
-    try {
-      await jobsApi.update(jobId, { status: newStatus });
-    } catch {
-      loadJobs();
-    }
+    try { await jobsApi.update(jobId, { status: newStatus }); } catch { loadJobs(); }
   }
 
   async function handleSave(data) {
@@ -122,8 +118,7 @@ export default function Tracker() {
   function toggleSelect(id) {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
@@ -133,14 +128,11 @@ export default function Tracker() {
     else setSelectedIds(new Set(filtered.map(j => j.id)));
   }
 
-  async function startBulkTailor() {
+  function startBulkTailor() {
     const toProcess = filtered.filter(j => selectedIds.has(j.id));
     if (!toProcess.length) return;
     setBulkQueue({ jobs: toProcess, current: 0, done: [], errors: [], running: true });
   }
-
-  const bulkTailorRef = useRef(null);
-  bulkTailorRef.current = bulkQueue;
 
   useEffect(() => {
     if (!bulkQueue || !bulkQueue.running) return;
@@ -148,21 +140,16 @@ export default function Tracker() {
       setBulkQueue(prev => ({ ...prev, running: false }));
       return;
     }
-
     const job = bulkQueue.jobs[bulkQueue.current];
     aiApi.tailorResume(job.id, defaultResumeId)
-      .then(() => {
-        setBulkQueue(prev => prev ? {
-          ...prev, current: prev.current + 1,
-          done: [...prev.done, { id: job.id, title: job.title, company: job.company }],
-        } : null);
-      })
-      .catch(err => {
-        setBulkQueue(prev => prev ? {
-          ...prev, current: prev.current + 1,
-          errors: [...prev.errors, { id: job.id, title: job.title, company: job.company, error: err.message }],
-        } : null);
-      });
+      .then(() => setBulkQueue(prev => prev ? {
+        ...prev, current: prev.current + 1,
+        done: [...prev.done, { id: job.id, title: job.title, company: job.company }],
+      } : null))
+      .catch(err => setBulkQueue(prev => prev ? {
+        ...prev, current: prev.current + 1,
+        errors: [...prev.errors, { id: job.id, title: job.title, company: job.company, error: err.message }],
+      } : null));
   }, [bulkQueue?.current, bulkQueue?.running]);
 
   const sortIcon = col => sortBy === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
@@ -202,7 +189,6 @@ export default function Tracker() {
 
       {error && <div className={styles.error}>{error}</div>}
 
-      {/* Controls */}
       <div className={styles.controls}>
         <input
           ref={searchRef}
@@ -217,21 +203,13 @@ export default function Tracker() {
           onChange={e => setStatusFilter(e.target.value)}
         >
           <option value="">All statuses</option>
-          {STATUS_ORDER.map(s => (
-            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-          ))}
+          {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
         </select>
         <div className={styles.viewToggle}>
-          <button
-            className={`${styles.viewBtn} ${view === 'kanban' ? styles.viewBtnActive : ''}`}
-            onClick={() => setView('kanban')}
-          >
+          <button className={`${styles.viewBtn} ${view === 'kanban' ? styles.viewBtnActive : ''}`} onClick={() => setView('kanban')}>
             Kanban <span style={{ opacity: 0.4, fontSize: '11px' }}>K</span>
           </button>
-          <button
-            className={`${styles.viewBtn} ${view === 'list' ? styles.viewBtnActive : ''}`}
-            onClick={() => setView('list')}
-          >
+          <button className={`${styles.viewBtn} ${view === 'list' ? styles.viewBtnActive : ''}`} onClick={() => setView('list')}>
             List <span style={{ opacity: 0.4, fontSize: '11px' }}>L</span>
           </button>
         </div>
@@ -264,60 +242,30 @@ export default function Tracker() {
                       style={{ width: 'auto', cursor: 'pointer' }}
                     />
                   </th>
-                  <th className={styles.th} onClick={() => toggleSort('title')}>
-                    Title<span className={styles.sortIcon}>{sortIcon('title')}</span>
-                  </th>
-                  <th className={styles.th} onClick={() => toggleSort('company')}>
-                    Company<span className={styles.sortIcon}>{sortIcon('company')}</span>
-                  </th>
-                  <th className={styles.th} onClick={() => toggleSort('status')}>
-                    Status<span className={styles.sortIcon}>{sortIcon('status')}</span>
-                  </th>
-                  <th className={styles.th} onClick={() => toggleSort('deadline')}>
-                    Deadline<span className={styles.sortIcon}>{sortIcon('deadline')}</span>
-                  </th>
-                  <th className={styles.th} onClick={() => toggleSort('updated_at')}>
-                    Updated<span className={styles.sortIcon}>{sortIcon('updated_at')}</span>
-                  </th>
+                  <th className={styles.th} onClick={() => toggleSort('title')}>Title<span className={styles.sortIcon}>{sortIcon('title')}</span></th>
+                  <th className={styles.th} onClick={() => toggleSort('company')}>Company<span className={styles.sortIcon}>{sortIcon('company')}</span></th>
+                  <th className={styles.th} onClick={() => toggleSort('status')}>Status<span className={styles.sortIcon}>{sortIcon('status')}</span></th>
+                  <th className={styles.th} onClick={() => toggleSort('deadline')}>Deadline<span className={styles.sortIcon}>{sortIcon('deadline')}</span></th>
+                  <th className={styles.th} onClick={() => toggleSort('updated_at')}>Updated<span className={styles.sortIcon}>{sortIcon('updated_at')}</span></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(job => {
                   const dl = deadlineLabel(job.deadline);
                   return (
-                    <tr
-                      key={job.id}
-                      className={styles.tr}
-                      onClick={e => { if (e.target.type !== 'checkbox') navigate(`/jobs/${job.id}`); }}
-                    >
+                    <tr key={job.id} className={styles.tr} onClick={e => { if (e.target.type !== 'checkbox') navigate(`/jobs/${job.id}`); }}>
                       <td className={styles.td} onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(job.id)}
-                          onChange={() => toggleSelect(job.id)}
-                          style={{ width: 'auto', cursor: 'pointer' }}
-                        />
+                        <input type="checkbox" checked={selectedIds.has(job.id)} onChange={() => toggleSelect(job.id)} style={{ width: 'auto', cursor: 'pointer' }} />
                       </td>
                       <td className={`${styles.td} ${styles.jobTitleCell}`}>{job.title}</td>
                       <td className={`${styles.td} ${styles.muted}`}>{job.company}</td>
                       <td className={styles.td}>
-                        <span
-                          className={styles.statusBadge}
-                          style={{
-                            background: `var(--status-${job.status})22`,
-                            color: `var(--status-${job.status})`,
-                            border: `1px solid var(--status-${job.status})44`,
-                          }}
-                        >
+                        <span className={styles.statusBadge} style={{ background: `var(--status-${job.status})22`, color: `var(--status-${job.status})`, border: `1px solid var(--status-${job.status})44` }}>
                           {STATUS_LABELS[job.status] || job.status}
                         </span>
                       </td>
                       <td className={styles.td}>
-                        {dl ? (
-                          <span style={{ color: dl.color, fontSize: '13px' }}>{dl.label}</span>
-                        ) : (
-                          <span className={styles.muted}>—</span>
-                        )}
+                        {dl ? <span style={{ color: dl.color, fontSize: '13px' }}>{dl.label}</span> : <span className={styles.muted}>—</span>}
                       </td>
                       <td className={`${styles.td} ${styles.muted}`}>{daysAgo(job.updated_at)}</td>
                     </tr>
@@ -329,94 +277,50 @@ export default function Tracker() {
         </div>
       )}
 
-      {/* Keyboard shortcut hint */}
       {!loading && (
         <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'right' }}>
-          Shortcuts: <kbd style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px' }}>N</kbd> new job &nbsp;
+          <kbd style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px' }}>N</kbd> new &nbsp;
           <kbd style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px' }}>K</kbd> kanban &nbsp;
           <kbd style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px' }}>L</kbd> list &nbsp;
           <kbd style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px' }}>/</kbd> search
         </div>
       )}
 
-      {/* Add Job Modal */}
-      {showModal && (
-        <AddJobModal
-          onClose={() => setShowModal(false)}
-          onSave={handleSave}
-        />
-      )}
+      {showModal && <AddJobModal onClose={() => setShowModal(false)} onSave={handleSave} />}
 
       {/* Bulk Tailor Overlay */}
       {bulkQueue && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-            borderRadius: '14px', padding: '32px', minWidth: '380px', maxWidth: '480px',
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '14px', padding: '32px', minWidth: '380px', maxWidth: '480px' }}>
             <h2 style={{ marginBottom: '16px', fontSize: '18px' }}>Bulk Tailoring Queue</h2>
-
             <div style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                 <span>{bulkQueue.current} / {bulkQueue.jobs.length} processed</span>
-                {bulkQueue.running && <span style={{ color: 'var(--accent)' }}>Running...</span>}
-                {!bulkQueue.running && <span style={{ color: 'var(--success)' }}>Complete</span>}
+                {bulkQueue.running ? <span style={{ color: 'var(--accent)' }}>Running...</span> : <span style={{ color: 'var(--success)' }}>Complete</span>}
               </div>
               <div style={{ background: 'var(--bg-tertiary)', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
-                <div style={{
-                  background: 'var(--accent)',
-                  height: '100%',
-                  width: `${(bulkQueue.current / bulkQueue.jobs.length) * 100}%`,
-                  transition: 'width 0.3s ease',
-                  borderRadius: '6px',
-                }} />
+                <div style={{ background: 'var(--accent)', height: '100%', width: `${(bulkQueue.current / bulkQueue.jobs.length) * 100}%`, transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
             </div>
-
             {bulkQueue.running && bulkQueue.current < bulkQueue.jobs.length && (
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                 Tailoring: <strong>{bulkQueue.jobs[bulkQueue.current]?.title}</strong> at {bulkQueue.jobs[bulkQueue.current]?.company}
               </div>
             )}
-
             {bulkQueue.done.length > 0 && (
               <div style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--success)', marginBottom: '6px', fontWeight: 600 }}>
-                  Completed ({bulkQueue.done.length})
-                </div>
-                {bulkQueue.done.map(j => (
-                  <div key={j.id} style={{ fontSize: '13px', padding: '4px 0', color: 'var(--text-secondary)' }}>
-                    ✓ {j.title} at {j.company}
-                  </div>
-                ))}
+                <div style={{ fontSize: '12px', color: 'var(--success)', marginBottom: '6px', fontWeight: 600 }}>Completed ({bulkQueue.done.length})</div>
+                {bulkQueue.done.map(j => <div key={j.id} style={{ fontSize: '13px', padding: '4px 0', color: 'var(--text-secondary)' }}>✓ {j.title} at {j.company}</div>)}
               </div>
             )}
-
             {bulkQueue.errors.length > 0 && (
               <div style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--danger)', marginBottom: '6px', fontWeight: 600 }}>
-                  Errors ({bulkQueue.errors.length})
-                </div>
-                {bulkQueue.errors.map(j => (
-                  <div key={j.id} style={{ fontSize: '13px', padding: '4px 0', color: 'var(--danger)' }}>
-                    ✗ {j.title}: {j.error}
-                  </div>
-                ))}
+                <div style={{ fontSize: '12px', color: 'var(--danger)', marginBottom: '6px', fontWeight: 600 }}>Errors ({bulkQueue.errors.length})</div>
+                {bulkQueue.errors.map(j => <div key={j.id} style={{ fontSize: '13px', padding: '4px 0', color: 'var(--danger)' }}>✗ {j.title}: {j.error}</div>)}
               </div>
             )}
-
             {!bulkQueue.running && (
-              <button
-                onClick={() => { setBulkQueue(null); setSelectedIds(new Set()); }}
-                style={{
-                  width: '100%', padding: '10px', background: 'var(--accent)',
-                  color: 'white', border: 'none', borderRadius: '8px',
-                  fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-                }}
-              >
+              <button onClick={() => { setBulkQueue(null); setSelectedIds(new Set()); }} style={{ width: '100%', padding: '10px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
                 Done
               </button>
             )}
