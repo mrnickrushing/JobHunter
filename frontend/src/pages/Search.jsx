@@ -67,7 +67,7 @@ export default function Search() {
         salary_min: job.salary_min,
         salary_max: job.salary_max,
         status: 'saved',
-        source: 'Adzuna',
+        source: job.source || 'Search',
       });
       setSavedIds(prev => new Set([...prev, job.id]));
     } catch (err) {
@@ -83,7 +83,7 @@ export default function Search() {
     <div className={styles.page}>
       <div className={styles.header}>
         <h1 className={styles.title}>Find Jobs</h1>
-        <p className={styles.subtitle}>Search millions of jobs powered by Adzuna</p>
+        <p className={styles.subtitle}>Search millions of jobs powered by Adzuna & Jooble</p>
       </div>
 
       <form onSubmit={handleSubmit} className={styles.searchBar}>
@@ -153,7 +153,11 @@ export default function Search() {
                   {formatSalary(job.salary_min, job.salary_max) && (
                     <span className={styles.metaItem}>💰 {formatSalary(job.salary_min, job.salary_max)}</span>
                   )}
+                  {!formatSalary(job.salary_min, job.salary_max) && job.salary && (
+                    <span className={styles.metaItem}>💰 {job.salary}</span>
+                  )}
                   {job.posted_at && <span className={styles.metaItem}>🕐 {daysAgo(job.posted_at)}</span>}
+                  {job.source && <span className={styles.sourceBadge}>{job.source}</span>}
                 </div>
                 {job.description && (
                   <p className={styles.description}>
