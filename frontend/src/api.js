@@ -109,7 +109,30 @@ export const resumes = {
     }
     return res.json();
   },
+  create: async ({ name, file }) => resumes.upload(file, name),
+  reupload: async ({ id, file }) => {
+    if (file.size > MAX_RESUME_SIZE) {
+      throw new Error(`File too large. Maximum size is ${MAX_RESUME_SIZE / 1024 / 1024}MB.`);
+    }
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('resume', file);
+    const res = await fetch(`${BASE_URL}/api/resumes/${id}/reupload`, {
+      method: 'PUT',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let message = `Reupload failed: ${res.status}`;
+      try { const json = JSON.parse(text); message = json.error || json.message || message; } catch {}
+      throw new Error(message);
+    }
+    return res.json();
+  },
+  update: (id, data) => request(`/api/resumes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   setDefault: (id) => request(`/api/resumes/${id}/default`, { method: 'PUT' }),
+  remove: (id) => request(`/api/resumes/${id}`, { method: 'DELETE' }),
   delete: (id) => request(`/api/resumes/${id}`, { method: 'DELETE' }),
   download: (id, filename) => downloadFile(`/api/resumes/${id}/download`, filename),
 };
