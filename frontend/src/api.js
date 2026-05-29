@@ -135,3 +135,18 @@ export const ai = {
   downloadCoverLetter: (jobId, company) =>
     downloadFile(`/api/ai/${jobId}/cover-letter/download`, `${company || 'cover'}-letter.docx`),
 };
+
+export function validateResumeFile(file) {
+  if (!file) return 'No file selected.';
+  const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  if (!allowed.includes(file.type)) return 'Only PDF and DOCX files are accepted.';
+  if (file.size > MAX_RESUME_SIZE) return `File too large. Maximum size is ${MAX_RESUME_SIZE / 1024 / 1024}MB.`;
+  return null;
+}
+
+export const search = {
+  search: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/search${qs ? `?${qs}` : ''}`);
+  },
+};

@@ -62,13 +62,13 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    original_name TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    mime_type TEXT NOT NULL,
+    content TEXT,
+    file_data BLOB,
+    file_type TEXT,
+    original_name TEXT,
     is_default INTEGER NOT NULL DEFAULT 0,
-    version INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS ai_documents (
@@ -87,7 +87,11 @@ db.exec(`
 const migrate = (sql) => { try { db.exec(sql); } catch (e) { /* column may already exist */ } };
 migrate("ALTER TABLE jobs ADD COLUMN deadline TEXT");
 migrate("ALTER TABLE jobs ADD COLUMN linkedin_url TEXT");
-migrate("ALTER TABLE resumes ADD COLUMN version INTEGER NOT NULL DEFAULT 1");
+migrate("ALTER TABLE resumes ADD COLUMN content TEXT");
+migrate("ALTER TABLE resumes ADD COLUMN file_data BLOB");
+migrate("ALTER TABLE resumes ADD COLUMN file_type TEXT");
+migrate("ALTER TABLE resumes ADD COLUMN original_name TEXT");
+migrate("ALTER TABLE resumes ADD COLUMN updated_at TEXT");
 migrate("ALTER TABLE ai_documents ADD COLUMN resume_version INTEGER DEFAULT 1");
 
 module.exports = db;
