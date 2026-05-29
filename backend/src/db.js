@@ -92,6 +92,7 @@ migrate("ALTER TABLE resumes ADD COLUMN file_data BLOB");
 migrate("ALTER TABLE resumes ADD COLUMN file_type TEXT");
 migrate("ALTER TABLE resumes ADD COLUMN original_name TEXT");
 migrate("ALTER TABLE resumes ADD COLUMN updated_at TEXT");
+migrate("UPDATE resumes SET updated_at = created_at WHERE updated_at IS NULL");
 migrate("ALTER TABLE ai_documents ADD COLUMN resume_version INTEGER DEFAULT 1");
 migrate("ALTER TABLE ai_documents ADD COLUMN resume_id INTEGER REFERENCES resumes(id) ON DELETE SET NULL");
 

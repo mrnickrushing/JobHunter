@@ -140,8 +140,8 @@ router.get('/', async (req, res) => {
       return res.status(503).json({ error: 'Job search is not configured.' });
     }
 
-    const perPage = parseInt(results_per_page);
-    const pageNum = parseInt(page);
+    const perPage = Math.min(Math.max(parseInt(results_per_page) || 10, 1), 50);
+    const pageNum = Math.max(parseInt(page) || 1, 1);
 
     const [adzunaResult, joobleResult, museResult] = await Promise.all([
       hasAdzuna ? searchAdzuna(q, location, pageNum, perPage).catch(() => null) : Promise.resolve(null),

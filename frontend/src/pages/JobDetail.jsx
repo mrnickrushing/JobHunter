@@ -32,10 +32,6 @@ export default function JobDetail() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
-  const [newContact, setNewContact] = useState({ name: '', role: '', email: '', phone: '', linkedin: '' });
-  const [addingContact, setAddingContact] = useState(false);
-  const [showContactForm, setShowContactForm] = useState(false);
-
   const [newEvent, setNewEvent] = useState({ type: 'interview', title: '', scheduled_at: '', notes: '' });
   const [addingEvent, setAddingEvent] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
@@ -68,24 +64,6 @@ export default function JobDetail() {
     await saveField('status', newStatus);
   }
 
-  async function addContact(e) {
-    e.preventDefault();
-    if (!newContact.name.trim()) return;
-    setAddingContact(true);
-    try {
-      const data = await jobsApi.addContact(id, newContact);
-      setJob(prev => ({ ...prev, contacts: [...(prev.contacts || []), data.contact] }));
-      setNewContact({ name: '', role: '', email: '', phone: '', linkedin: '' });
-      setShowContactForm(false);
-    } catch {}
-    setAddingContact(false);
-  }
-
-  async function deleteContact(contactId) {
-    await jobsApi.removeContact(id, contactId);
-    setJob(prev => ({ ...prev, contacts: prev.contacts.filter(c => c.id !== contactId) }));
-  }
-
   async function addEvent(e) {
     e.preventDefault();
     if (!newEvent.title.trim()) return;
@@ -100,14 +78,18 @@ export default function JobDetail() {
   }
 
   async function deleteEvent(eventId) {
-    await jobsApi.removeEvent(id, eventId);
-    setJob(prev => ({ ...prev, events: prev.events.filter(ev => ev.id !== eventId) }));
+    try {
+      await jobsApi.deleteEvent(id, eventId);
+      setJob(prev => ({ ...prev, events: prev.events.filter(ev => ev.id !== eventId) }));
+    } catch { /* silently ignore */ }
   }
 
   async function deleteJob() {
     if (!confirm('Delete this job? This cannot be undone.')) return;
-    await jobsApi.remove(id);
-    navigate('/tracker');
+    try {
+      await jobsApi.delete(id);
+      navigate('/tracker');
+    } catch { setError('Failed to delete job.'); }
   }
 
   if (loading) return <div className={styles.loading}>Loading...</div>;
@@ -173,47 +155,6 @@ export default function JobDetail() {
               placeholder="Your notes about this opportunity..."
               rows={4}
             />
-          </div>
-
-          {/* Contacts */}
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <h3 className={styles.sectionTitle}>Contacts</h3>
-              <button className={styles.addSmallBtn} onClick={() => setShowContactForm(v => !v)}>
-                {showContactForm ? 'Cancel' : '+ Add Contact'}
-              </button>
-            </div>
-            {showContactForm && (
-              <form onSubmit={addContact} className={styles.subForm}>
-                <div className={styles.row}>
-                  <input value={newContact.name} onChange={e => setNewContact(p => ({ ...p, name: e.target.value }))} placeholder="Name *" required />
-                  <input value={newContact.role} onChange={e => setNewContact(p => ({ ...p, role: e.target.value }))} placeholder="Role" />
-                </div>
-                <div className={styles.row}>
-                  <input value={newContact.email} onChange={e => setNewContact(p => ({ ...p, email: e.target.value }))} placeholder="Email" type="email" />
-                  <input value={newContact.phone} onChange={e => setNewContact(p => ({ ...p, phone: e.target.value }))} placeholder="Phone" />
-                </div>
-                <input value={newContact.linkedin} onChange={e => setNewContact(p => ({ ...p, linkedin: e.target.value }))} placeholder="LinkedIn URL" />
-                <button type="submit" className={styles.submitSmall} disabled={addingContact}>
-                  {addingContact ? 'Adding...' : 'Add Contact'}
-                </button>
-              </form>
-            )}
-            {(job.contacts || []).length === 0 && !showContactForm && (
-              <p className={styles.empty}>No contacts yet.</p>
-            )}
-            {(job.contacts || []).map(c => (
-              <div key={c.id} className={styles.contactCard}>
-                <div className={styles.contactInfo}>
-                  <span className={styles.contactName}>{c.name}</span>
-                  {c.role && <span className={styles.contactMeta}>{c.role}</span>}
-                  {c.email && <a href={`mailto:${c.email}`} className={styles.contactLink}>{c.email}</a>}
-                  {c.phone && <span className={styles.contactMeta}>{c.phone}</span>}
-                  {c.linkedin && <a href={c.linkedin} target="_blank" rel="noopener noreferrer" className={styles.contactLink}>LinkedIn</a>}
-                </div>
-                <button className={styles.removeBtn} onClick={() => deleteContact(c.id)}>✕</button>
-              </div>
-            ))}
           </div>
 
           {/* Events/Timeline */}
