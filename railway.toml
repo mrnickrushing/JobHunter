@@ -1,5 +1,5 @@
 [build]
-buildCommand = "cd backend && npm install --production && cd .. && npm run build"
+buildCommand = "cd backend && npm install --omit=dev && cd .. && npm run build"
 
 [deploy]
 startCommand = "node backend/server.js"
