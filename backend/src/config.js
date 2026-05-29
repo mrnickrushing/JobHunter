@@ -14,6 +14,7 @@ const config = {
   ADZUNA_APP_ID: process.env.ADZUNA_APP_ID,
   ADZUNA_API_KEY: process.env.ADZUNA_API_KEY,
   JOOBLE_API_KEY: process.env.JOOBLE_API_KEY,
+  THEMUSE_API_KEY: process.env.THEMUSE_API_KEY,
   DB_PATH: NODE_ENV === 'production' ? '/app/data/data.sqlite' : './data.sqlite',
   NODE_ENV,
 };

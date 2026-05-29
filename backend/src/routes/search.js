@@ -81,6 +81,48 @@ async function searchJooble(q, location, page, perPage) {
   };
 }
 
+function stripHtml(html) {
+  return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function searchTheMuse(q, location, page, perPage) {
+  if (!config.THEMUSE_API_KEY) return null;
+
+  // The Muse uses 0-based pages and filters by category; the query maps to category
+  const musePerPage = Math.min(perPage, 20);
+  const params = new URLSearchParams({
+    api_key: config.THEMUSE_API_KEY,
+    page: String(page - 1), // convert 1-based to 0-based
+    category: q,
+  });
+  if (location) params.append('location', location);
+
+  const url = `https://www.themuse.com/api/public/jobs?${params.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.error('The Muse API error:', res.status, await res.text().catch(() => ''));
+    return null;
+  }
+  const data = await res.json();
+
+  return {
+    total: data.total || 0,
+    results: (data.results || []).slice(0, musePerPage).map(job => ({
+      id: `muse-${job.id}`,
+      title: job.name || '',
+      company: job.company?.name || '',
+      location: job.locations?.map(l => l.name).join(', ') || '',
+      url: job.refs?.landing_page || '',
+      description: stripHtml(job.contents),
+      salary_min: null,
+      salary_max: null,
+      salary: null,
+      posted_at: job.publication_date || null,
+      source: 'The Muse',
+    })),
+  };
+}
+
 // GET /api/search
 router.get('/', async (req, res) => {
   try {
@@ -92,25 +134,28 @@ router.get('/', async (req, res) => {
 
     const hasAdzuna = !!(config.ADZUNA_APP_ID && config.ADZUNA_API_KEY);
     const hasJooble = !!config.JOOBLE_API_KEY;
+    const hasMuse = !!config.THEMUSE_API_KEY;
 
-    if (!hasAdzuna && !hasJooble) {
+    if (!hasAdzuna && !hasJooble && !hasMuse) {
       return res.status(503).json({ error: 'Job search is not configured.' });
     }
 
     const perPage = parseInt(results_per_page);
     const pageNum = parseInt(page);
 
-    const [adzunaResult, joobleResult] = await Promise.all([
+    const [adzunaResult, joobleResult, museResult] = await Promise.all([
       hasAdzuna ? searchAdzuna(q, location, pageNum, perPage).catch(() => null) : Promise.resolve(null),
       hasJooble ? searchJooble(q, location, pageNum, perPage).catch(() => null) : Promise.resolve(null),
+      hasMuse ? searchTheMuse(q, location, pageNum, perPage).catch(() => null) : Promise.resolve(null),
     ]);
 
     const results = [
       ...(adzunaResult?.results || []),
       ...(joobleResult?.results || []),
+      ...(museResult?.results || []),
     ];
 
-    const total = (adzunaResult?.total || 0) + (joobleResult?.total || 0);
+    const total = (adzunaResult?.total || 0) + (joobleResult?.total || 0) + (museResult?.total || 0);
 
     res.json({ results, total, page: pageNum });
   } catch (err) {

@@ -83,7 +83,7 @@ export default function Search() {
     <div className={styles.page}>
       <div className={styles.header}>
         <h1 className={styles.title}>Find Jobs</h1>
-        <p className={styles.subtitle}>Search millions of jobs powered by Adzuna & Jooble</p>
+        <p className={styles.subtitle}>Search millions of jobs powered by Adzuna, Jooble & The Muse</p>
       </div>
 
       <form onSubmit={handleSubmit} className={styles.searchBar}>
