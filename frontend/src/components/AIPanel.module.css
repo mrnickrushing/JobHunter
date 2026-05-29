@@ -20,10 +20,9 @@
 }
 
 .tab {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 8px;
-  font-size: 0.75rem;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-muted);
   background: none;
