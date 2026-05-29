@@ -46,7 +46,8 @@ export default function AIPanel({ jobId, jobCompany }) {
   }
 
   async function runAI(action) {
-    if (!selectedResume) { setError('Please select a resume first.'); return; }
+    const requiresResume = action === 'match_score' || action === 'tailored_resume' || action === 'cover_letter';
+    if (requiresResume && !selectedResume) { setError('Please select a resume first.'); return; }
     setLoading(true); setError(''); setDownloadNote('');
     try {
       let result;
@@ -56,13 +57,16 @@ export default function AIPanel({ jobId, jobCompany }) {
       else if (action === 'interview_prep') result = await ai.interviewPrep(jobId, selectedResume);
       else if (action === 'email_draft') result = await ai.emailDraft(jobId, selectedResume);
 
+      // Each endpoint returns { [action]: "text" } — extract the text by key
+      const text = result[action] || '';
+
       if (action === 'tailored_resume' || action === 'cover_letter') {
-        setResults(prev => ({ ...prev, [action]: result.content }));
+        setResults(prev => ({ ...prev, [action]: text }));
         setLoading(false);
         await downloadDocx(action);
         return;
       }
-      setResults(prev => ({ ...prev, [action]: result.content || result }));
+      setResults(prev => ({ ...prev, [action]: text }));
     } catch (err) { setError(err.message || 'AI request failed.'); }
     finally { setLoading(false); }
   }
@@ -93,10 +97,10 @@ export default function AIPanel({ jobId, jobCompany }) {
       <div className={styles.body}>
         {error && <div className={styles.error}>{error}</div>}
         {downloadNote && <div className={styles.downloadNote}>{downloadNote}</div>}
-        {activeTab === 0 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('match_score')} disabled={isWorking}>{loading ? 'Analyzing...' : 'Analyze Match'}</button>{results.match_score && <MatchScoreResult data={results.match_score} />}</div>}
+        {activeTab === 0 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('match_score')} disabled={isWorking}>{loading ? 'Analyzing...' : 'Analyze Match'}</button>{results.match_score && <MatchScoreResult data={results.match_score} styles={styles} />}</div>}
         {activeTab === 1 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('tailored_resume')} disabled={isWorking}>{loading ? 'Tailoring...' : downloading ? 'Downloading...' : 'Tailor + Download Resume'}</button><p className={styles.hint}>Generates a job-tailored version and automatically downloads it as a <strong>.docx</strong> file.</p>{results.tailored_resume && <TextResult label="Tailored Resume" text={results.tailored_resume} onCopy={copyText} onDownload={() => downloadDocx('tailored_resume')} downloading={downloading} styles={styles} />}</div>}
         {activeTab === 2 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('cover_letter')} disabled={isWorking}>{loading ? 'Writing...' : downloading ? 'Downloading...' : 'Generate + Download Cover Letter'}</button><p className={styles.hint}>Writes a personalized cover letter and automatically downloads it as a <strong>.docx</strong> file.</p>{results.cover_letter && <TextResult label="Cover Letter" text={results.cover_letter} onCopy={copyText} onDownload={() => downloadDocx('cover_letter')} downloading={downloading} styles={styles} />}</div>}
-        {activeTab === 3 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('interview_prep')} disabled={isWorking}>{loading ? 'Preparing...' : 'Generate Prep'}</button>{results.interview_prep && <InterviewPrepResult data={results.interview_prep} />}</div>}
+        {activeTab === 3 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('interview_prep')} disabled={isWorking}>{loading ? 'Preparing...' : 'Generate Prep'}</button>{results.interview_prep && <InterviewPrepResult data={results.interview_prep} styles={styles} />}</div>}
         {activeTab === 4 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('email_draft')} disabled={isWorking}>{loading ? 'Drafting...' : 'Generate Email Draft'}</button>{results.email_draft && <TextResult label="Email Draft" text={results.email_draft} onCopy={copyText} styles={styles} />}</div>}
       </div>
     </div>
@@ -107,13 +111,19 @@ function TextResult({ label, text, onCopy, onDownload, downloading, styles }) {
   return <div className={styles.textResult}><div className={styles.resultHeader}><span className={styles.resultLabel}>{label}</span><div className={styles.resultActions}>{onDownload ? <button className={styles.downloadBtn} onClick={onDownload} disabled={downloading}>{downloading ? 'Downloading...' : '⤓ Re-download .docx'}</button> : null}<button className={styles.copyBtn} onClick={() => onCopy(text)}>Copy</button></div></div><textarea className={styles.resultTextarea} value={text} readOnly rows={20} /></div>;
 }
 
-function MatchScoreResult({ data }) {
+function MatchScoreResult({ data, styles }) {
+  if (typeof data === 'string') {
+    return <textarea className={styles.resultTextarea} value={data} readOnly rows={20} />;
+  }
   const score = data.score || 0;
   const color = score >= 75 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--danger)';
   return <div className={styles.matchResult}><div className={styles.scoreCircle} style={{ '--score-color': color }}><span className={styles.scoreNum}>{score}</span><span className={styles.scoreLabel}>/ 100</span></div>{data.strengths?.length > 0 && <div className={styles.section2}><div className={styles.sectionTitle} style={{ color: 'var(--success)' }}>Strengths</div><ul className={styles.list}>{data.strengths.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}{data.gaps?.length > 0 && <div className={styles.section2}><div className={styles.sectionTitle} style={{ color: 'var(--danger)' }}>Gaps</div><ul className={styles.list}>{data.gaps.map((g, i) => <li key={i}>{g}</li>)}</ul></div>}{data.recommendation && <div className={styles.recommendation}><div className={styles.sectionTitle}>Recommendation</div><p>{data.recommendation}</p></div>}</div>;
 }
 
-function InterviewPrepResult({ data }) {
+function InterviewPrepResult({ data, styles }) {
   const [openQ, setOpenQ] = useState(null);
+  if (typeof data === 'string') {
+    return <textarea className={styles.resultTextarea} value={data} readOnly rows={20} />;
+  }
   return <div className={styles.prepResult}>{data.questions?.length > 0 && <div className={styles.section2}><div className={styles.sectionTitle}>Likely Questions</div>{data.questions.map((q, i) => <div key={i} className={styles.questionItem}><button className={styles.questionBtn} onClick={() => setOpenQ(openQ === i ? null : i)}><span>{q.question}</span><span className={styles.chevron}>{openQ === i ? '▲' : '▼'}</span></button>{openQ === i && q.answer_framework && <div className={styles.answerFramework}>{q.answer_framework}</div>}</div>)}</div>}{data.topics?.length > 0 && <div className={styles.section2}><div className={styles.sectionTitle}>Key Topics to Study</div><div className={styles.tags}>{data.topics.map((t, i) => <span key={i} className={styles.tag}>{t}</span>)}</div></div>}{data.tips?.length > 0 && <div className={styles.section2}><div className={styles.sectionTitle}>Tips</div><ul className={styles.list}>{data.tips.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}</div>;
 }

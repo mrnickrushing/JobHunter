@@ -176,3 +176,7 @@ textarea {
 * {
   transition-timing-function: ease;
 }
+
+.main-with-nav {
+  padding-top: 60px;
+}

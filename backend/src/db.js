@@ -93,5 +93,6 @@ migrate("ALTER TABLE resumes ADD COLUMN file_type TEXT");
 migrate("ALTER TABLE resumes ADD COLUMN original_name TEXT");
 migrate("ALTER TABLE resumes ADD COLUMN updated_at TEXT");
 migrate("ALTER TABLE ai_documents ADD COLUMN resume_version INTEGER DEFAULT 1");
+migrate("ALTER TABLE ai_documents ADD COLUMN resume_id INTEGER REFERENCES resumes(id) ON DELETE SET NULL");
 
 module.exports = db;
