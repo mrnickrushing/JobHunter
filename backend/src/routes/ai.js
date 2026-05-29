@@ -196,6 +196,103 @@ function textToDocx(text, title) {
   });
 }
 
+async function parseResumeToJSON(resumeText) {
+  const raw = await callClaude(
+    'You are a resume parser. Extract structured data and return ONLY valid JSON, no markdown.',
+    `Parse this resume into structured JSON with EXACTLY this shape — use empty arrays/strings for missing fields:
+{
+  "name": "Full Name",
+  "title": "Professional Title",
+  "contact": { "email": "", "phone": "", "linkedin": "", "website": "" },
+  "summary": "Summary paragraph",
+  "experience": [{ "company": "", "role": "", "dates": "", "bullets": [""] }],
+  "education": [{ "degree": "", "institution": "", "dates": "", "bullets": [""] }],
+  "skills": ["Skill 1"],
+  "certifications": ["Cert 1"]
+}
+
+For linkedin/website fields: include just the URL path without https://.
+For dates: use format "Month YYYY – Month YYYY" or "Month YYYY – Present".
+
+RESUME:
+${resumeText}
+
+Return ONLY the JSON object, no other text.`
+  );
+  const match = raw.match(/\{[\s\S]*\}/);
+  return JSON.parse(match ? match[0] : raw);
+}
+
+function renderResumeHTML(data) {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const clean = s => (s || '').replace(/^https?:\/\//, '');
+
+  const linkedinSvg = `<svg style="width:13px;height:13px;display:inline-block;vertical-align:middle" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>`;
+
+  const contactItems = [
+    data.contact?.email && `<span class="ci">✉ <a href="mailto:${esc(data.contact.email)}">${esc(data.contact.email)}</a></span>`,
+    data.contact?.phone && `<span class="ci">☏ ${esc(data.contact.phone)}</span>`,
+    data.contact?.linkedin && `<span class="ci">${linkedinSvg} <a href="https://${clean(data.contact.linkedin)}">${esc(clean(data.contact.linkedin))}</a></span>`,
+    data.contact?.website && `<span class="ci">🌐 <a href="https://${clean(data.contact.website)}">${esc(clean(data.contact.website))}</a></span>`,
+  ].filter(Boolean);
+
+  const entryHtml = (items, showDegree) => (items || []).map(e => {
+    const org = showDegree ? (e.degree || e.institution) : e.company;
+    const sub = showDegree ? (e.degree && e.institution ? e.institution : '') : e.role;
+    return `<div class="entry">
+      <div class="eh"><span class="eo">${esc(org)}</span><span class="ed">${esc(e.dates)}</span></div>
+      ${sub ? `<div class="er">${esc(sub)}</div>` : ''}
+      ${e.bullets?.filter(b => b).length ? `<ul>${e.bullets.filter(b => b).map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(data.name)} — Resume</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;background:#fff;max-width:760px;margin:0 auto;padding:40px 48px;font-size:13px;line-height:1.55}
+.hdr{text-align:center;margin-bottom:10px}
+.name{font-size:26px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#111827}
+.job-title{font-size:13.5px;color:#6b7280;margin-top:5px}
+.contact{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;margin:12px 0 26px;font-size:12px;color:#4b5563}
+.contact a{color:#4b5563;text-decoration:none}.contact a:hover{color:#d97706}
+.ci{display:flex;align-items:center;gap:5px}
+.sec{margin-bottom:22px}
+.st{color:#d97706;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1.5px solid #fde68a;padding-bottom:3px;margin-bottom:11px}
+.entry{margin-bottom:13px}
+.eh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.eo{font-weight:700;font-size:13px;color:#111827}
+.ed{font-size:11px;color:#9ca3af;font-style:italic;white-space:nowrap;flex-shrink:0}
+.er{font-size:12px;color:#6b7280;margin:2px 0 5px}
+ul{padding-left:18px;margin-top:4px}
+li{margin-bottom:3px;line-height:1.45}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:#fef3c7;color:#92400e;border-radius:999px;padding:3px 12px;font-size:11.5px;font-weight:500}
+ul.certs{list-style:none;padding:0}
+ul.certs li{padding:2px 0;font-size:12.5px}
+ul.certs li::before{content:'•';color:#d97706;margin-right:7px;font-weight:700}
+@media print{body{padding:20px 28px}.chip{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="name">${esc(data.name)}</div>
+  ${data.title ? `<div class="job-title">${esc(data.title)}</div>` : ''}
+</div>
+${contactItems.length ? `<div class="contact">${contactItems.join('')}</div>` : ''}
+${data.summary ? `<div class="sec"><div class="st">Summary</div><p>${esc(data.summary)}</p></div>` : ''}
+${data.experience?.length ? `<div class="sec"><div class="st">Work Experience</div>${entryHtml(data.experience, false)}</div>` : ''}
+${data.education?.length ? `<div class="sec"><div class="st">Education</div>${entryHtml(data.education, true)}</div>` : ''}
+${data.skills?.length ? `<div class="sec"><div class="st">Skills</div><div class="chips">${data.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div></div>` : ''}
+${data.certifications?.length ? `<div class="sec"><div class="st">Certificates</div><ul class="certs">${data.certifications.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+</body>
+</html>`;
+}
+
 // POST /api/ai/import-job
 router.post('/import-job', async (req, res) => {
   if (!checkRateLimit(req.user.id)) {
@@ -501,6 +598,23 @@ Make it direct, warm, and confident. Do not use placeholder names.`
   }
 });
 
+// GET /api/ai/resume-preview/:resumeId — must be before /:jobId routes
+router.get('/resume-preview/:resumeId', async (req, res) => {
+  if (!checkRateLimit(req.user.id)) {
+    return res.status(429).json({ error: 'Rate limit exceeded.' });
+  }
+  try {
+    const resume = db.prepare('SELECT content FROM resumes WHERE id = ? AND user_id = ?').get(req.params.resumeId, req.user.id);
+    if (!resume?.content) return res.status(404).json({ error: 'Resume not found.' });
+    const structured = await parseResumeToJSON(resume.content);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderResumeHTML(structured));
+  } catch (err) {
+    console.error('Resume preview error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate resume preview.' });
+  }
+});
+
 // GET /api/ai/:jobId/documents
 router.get('/:jobId/documents', (req, res) => {
   try {
@@ -525,6 +639,14 @@ router.get('/:jobId/tailor-resume/download', async (req, res) => {
     ).get(req.params.jobId, 'tailored_resume');
 
     if (!doc || !doc.content) return res.status(404).json({ error: 'No tailored resume found. Generate one first.' });
+
+    // HTML preview: parse content to structured JSON and render the visual template
+    if (req.query.format === 'html') {
+      if (!checkRateLimit(req.user.id)) return res.status(429).json({ error: 'Rate limit exceeded.' });
+      const structured = await parseResumeToJSON(doc.content);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(renderResumeHTML(structured));
+    }
 
     // Resolve the original resume file for format preservation
     const resumeId = req.query.resume_id || doc.resume_id;

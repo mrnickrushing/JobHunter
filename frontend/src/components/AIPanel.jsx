@@ -11,6 +11,7 @@ export default function AIPanel({ jobId, jobCompany }) {
   const [selectedResume, setSelectedResume] = useState('');
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [results, setResults] = useState({});
   const [error, setError] = useState('');
   const [downloadNote, setDownloadNote] = useState('');
@@ -33,6 +34,16 @@ export default function AIPanel({ jobId, jobCompany }) {
       setResults(newResults);
     }).catch(() => {});
   }, [jobId]);
+
+  async function previewHtml(type) {
+    setPreviewing(true); setError(''); setDownloadNote('');
+    try {
+      if (type === 'tailored_resume') await ai.previewTailoredResume(jobId, selectedResume);
+      setDownloadNote('✓ Preview opened');
+      setTimeout(() => setDownloadNote(''), 3000);
+    } catch (err) { setError(err.message || 'Preview failed.'); }
+    finally { setPreviewing(false); }
+  }
 
   async function downloadDocx(type) {
     setDownloading(true); setDownloadNote('');
@@ -82,7 +93,7 @@ export default function AIPanel({ jobId, jobCompany }) {
     </div>
   );
 
-  const isWorking = loading || downloading;
+  const isWorking = loading || downloading || previewing;
 
   return (
     <div className={styles.panel}>
@@ -98,7 +109,7 @@ export default function AIPanel({ jobId, jobCompany }) {
         {error && <div className={styles.error}>{error}</div>}
         {downloadNote && <div className={styles.downloadNote}>{downloadNote}</div>}
         {activeTab === 0 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('match_score')} disabled={isWorking}>{loading ? 'Analyzing...' : 'Analyze Match'}</button>{results.match_score && <MatchScoreResult data={results.match_score} styles={styles} />}</div>}
-        {activeTab === 1 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('tailored_resume')} disabled={isWorking}>{loading ? 'Tailoring...' : downloading ? 'Downloading...' : 'Tailor + Download Resume'}</button><p className={styles.hint}>Generates a job-tailored version and automatically downloads it as a <strong>.docx</strong> file.</p>{results.tailored_resume && <TextResult label="Tailored Resume" text={results.tailored_resume} onCopy={copyText} onDownload={() => downloadDocx('tailored_resume')} downloading={downloading} styles={styles} />}</div>}
+        {activeTab === 1 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('tailored_resume')} disabled={isWorking}>{loading ? 'Tailoring...' : downloading ? 'Downloading...' : 'Tailor + Download Resume'}</button><p className={styles.hint}>Generates a job-tailored version and automatically downloads it as a <strong>.docx</strong> file.</p>{results.tailored_resume && <TextResult label="Tailored Resume" text={results.tailored_resume} onCopy={copyText} onDownload={() => downloadDocx('tailored_resume')} onPreview={() => previewHtml('tailored_resume')} downloading={downloading} previewing={previewing} styles={styles} />}</div>}
         {activeTab === 2 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('cover_letter')} disabled={isWorking}>{loading ? 'Writing...' : downloading ? 'Downloading...' : 'Generate + Download Cover Letter'}</button><p className={styles.hint}>Writes a personalized cover letter and automatically downloads it as a <strong>.docx</strong> file.</p>{results.cover_letter && <TextResult label="Cover Letter" text={results.cover_letter} onCopy={copyText} onDownload={() => downloadDocx('cover_letter')} downloading={downloading} styles={styles} />}</div>}
         {activeTab === 3 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('interview_prep')} disabled={isWorking}>{loading ? 'Preparing...' : 'Generate Prep'}</button>{results.interview_prep && <InterviewPrepResult data={results.interview_prep} styles={styles} />}</div>}
         {activeTab === 4 && <div className={styles.section}>{resumeSelector}<button className={styles.runBtn} onClick={() => runAI('email_draft')} disabled={isWorking}>{loading ? 'Drafting...' : 'Generate Email Draft'}</button>{results.email_draft && <TextResult label="Email Draft" text={results.email_draft} onCopy={copyText} styles={styles} />}</div>}
@@ -107,8 +118,8 @@ export default function AIPanel({ jobId, jobCompany }) {
   );
 }
 
-function TextResult({ label, text, onCopy, onDownload, downloading, styles }) {
-  return <div className={styles.textResult}><div className={styles.resultHeader}><span className={styles.resultLabel}>{label}</span><div className={styles.resultActions}>{onDownload ? <button className={styles.downloadBtn} onClick={onDownload} disabled={downloading}>{downloading ? 'Downloading...' : '⤓ Re-download .docx'}</button> : null}<button className={styles.copyBtn} onClick={() => onCopy(text)}>Copy</button></div></div><textarea className={styles.resultTextarea} value={text} readOnly rows={20} /></div>;
+function TextResult({ label, text, onCopy, onDownload, onPreview, downloading, previewing, styles }) {
+  return <div className={styles.textResult}><div className={styles.resultHeader}><span className={styles.resultLabel}>{label}</span><div className={styles.resultActions}>{onPreview ? <button className={styles.previewBtn} onClick={onPreview} disabled={previewing || downloading}>{previewing ? 'Generating...' : '⊞ Preview HTML'}</button> : null}{onDownload ? <button className={styles.downloadBtn} onClick={onDownload} disabled={downloading || previewing}>{downloading ? 'Downloading...' : '⤓ Re-download .docx'}</button> : null}<button className={styles.copyBtn} onClick={() => onCopy(text)}>Copy</button></div></div><textarea className={styles.resultTextarea} value={text} readOnly rows={20} /></div>;
 }
 
 function MatchScoreResult({ data, styles }) {

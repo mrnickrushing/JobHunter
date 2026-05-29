@@ -17,6 +17,7 @@ export default function Resumes() {
   const [reuploadDragOver, setReuploadDragOver] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const fileInputRef = useRef(null);
   const reuploadInputRef = useRef(null);
 
@@ -141,6 +142,19 @@ export default function Resumes() {
   }
 
   // ── Delete ──────────────────────────────────────────────────────────────
+
+  async function handlePreview() {
+    if (!selected) return;
+    setPreviewing(true);
+    setError('');
+    try {
+      await resumesApi.preview(selected.id);
+    } catch (err) {
+      setError(err.message || 'Failed to generate preview.');
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function handleDelete() {
     if (!selected) return;
@@ -287,6 +301,9 @@ export default function Resumes() {
                       </span>
                     )}
                     {saved && <span className={styles.savedNote}>Saved ✓</span>}
+                    <button className={styles.previewBtn} onClick={handlePreview} disabled={previewing || saving || deleting}>
+                      {previewing ? 'Generating...' : '⊞ Preview HTML'}
+                    </button>
                     <button className={styles.deleteBtn} onClick={handleDelete} disabled={deleting}>
                       {deleting ? 'Deleting...' : 'Delete'}
                     </button>

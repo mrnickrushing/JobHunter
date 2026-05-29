@@ -265,6 +265,20 @@
 .saveBtn:hover:not(:disabled) { background: var(--accent-hover); }
 .saveBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.previewBtn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.previewBtn:hover:not(:disabled) { background: #fde68a; }
+.previewBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .deleteBtn {
   padding: 6px 14px;
   border-radius: 6px;

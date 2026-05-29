@@ -34,6 +34,24 @@ async function request(path, options = {}) {
   return res.text();
 }
 
+async function openHtmlPreview(path) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let message = 'Preview failed';
+    try { const json = JSON.parse(text); message = json.error || json.message || message; } catch {}
+    throw new Error(message);
+  }
+  const html = await res.text();
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 async function downloadFile(path, filename) {
   const token = getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -135,6 +153,7 @@ export const resumes = {
   remove: (id) => request(`/api/resumes/${id}`, { method: 'DELETE' }),
   delete: (id) => request(`/api/resumes/${id}`, { method: 'DELETE' }),
   download: (id, filename) => downloadFile(`/api/resumes/${id}/download`, filename),
+  preview: (id) => openHtmlPreview(`/api/ai/resume-preview/${id}`),
 };
 
 export const ai = {
@@ -157,6 +176,8 @@ export const ai = {
     downloadFile(`/api/ai/${jobId}/tailor-resume/download?resume_id=${resumeId}`, `${company || 'tailored'}-resume.docx`),
   downloadCoverLetter: (jobId, company) =>
     downloadFile(`/api/ai/${jobId}/cover-letter/download`, `${company || 'cover'}-letter.docx`),
+  previewTailoredResume: (jobId, resumeId) =>
+    openHtmlPreview(`/api/ai/${jobId}/tailor-resume/download?format=html${resumeId ? `&resume_id=${resumeId}` : ''}`),
 };
 
 export function validateResumeFile(file) {
