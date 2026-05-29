@@ -10,7 +10,7 @@ import Search from './pages/Search.jsx';
 import Resumes from './pages/Resumes.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
-import './index.css';
+import './styles/global.css';
 
 export const AuthContext = createContext(null);
 export function useAuth() { return useContext(AuthContext); }

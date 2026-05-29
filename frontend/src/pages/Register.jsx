@@ -33,29 +33,29 @@ export default function Register() {
   return (
     <div style={{ maxWidth: 400, margin: '4rem auto', padding: '2rem' }}>
       <h1>Create Account</h1>
-      {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger)', marginBottom: '1rem' }}>{error}</div>}
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '1rem' }}>
           <label>Name<br />
-            <input name="name" value={form.name} onChange={handleChange} required style={{ width: '100%' }} />
+            <input name="name" value={form.name} onChange={handleChange} required />
           </label>
         </div>
         <div style={{ marginBottom: '1rem' }}>
           <label>Email<br />
-            <input name="email" type="email" value={form.email} onChange={handleChange} required style={{ width: '100%' }} />
+            <input name="email" type="email" value={form.email} onChange={handleChange} required />
           </label>
         </div>
         <div style={{ marginBottom: '1rem' }}>
           <label>Password<br />
-            <input name="password" type="password" value={form.password} onChange={handleChange} required style={{ width: '100%' }} />
+            <input name="password" type="password" value={form.password} onChange={handleChange} required />
           </label>
         </div>
-        <button type="submit" disabled={loading} style={{ width: '100%' }}>
+        <button type="submit" disabled={loading} style={{ width: '100%', padding: '10px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}>
           {loading ? 'Creating account...' : 'Register'}
         </button>
       </form>
-      <p style={{ marginTop: '1rem', textAlign: 'center' }}>
-        Already have an account? <Link to="/login">Log in</Link>
+      <p style={{ marginTop: '1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        Already have an account? <Link to="/login" style={{ color: 'var(--accent)' }}>Log in</Link>
       </p>
     </div>
   );
