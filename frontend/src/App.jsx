@@ -1,162 +1,73 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { auth as authApi } from './api.js';
-
-import Login from './pages/Login.jsx';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { auth } from './api.js';
+import Navbar from './components/Navbar.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Tracker from './pages/Tracker.jsx';
+import Analytics from './pages/Analytics.jsx';
 import JobDetail from './pages/JobDetail.jsx';
 import Search from './pages/Search.jsx';
 import Resumes from './pages/Resumes.jsx';
-import Navbar from './components/Navbar.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import './index.css';
 
-// Auth Context
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
+export function useAuth() { return useContext(AuthContext); }
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
-
-function AuthProvider({ children }) {
+export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('jt_token');
+    const token = localStorage.getItem('jobhunter_token');
     if (token) {
-      authApi.me()
-        .then(data => {
-          setUser(data.user);
-        })
-        .catch(() => {
-          localStorage.removeItem('jt_token');
-        })
-        .finally(() => setLoading(false));
+      auth.me().then(data => {
+        setUser(data.user);
+      }).catch(() => {
+        localStorage.removeItem('jobhunter_token');
+      }).finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
   }, []);
 
   function login(token, userData) {
-    localStorage.setItem('jt_token', token);
+    localStorage.setItem('jobhunter_token', token);
     setUser(userData);
   }
 
   function logout() {
-    localStorage.removeItem('jt_token');
+    localStorage.removeItem('jobhunter_token');
     setUser(null);
   }
 
-  const value = { user, login, logout, loading };
+  if (loading) return <div className="app-loading">Loading...</div>;
+
+  function Protected({ children }) {
+    if (!user) return <Navigate to="/login" replace />;
+    return children;
+  }
 
   return (
-    <AuthContext.Provider value={value}>
-      {children}
+    <AuthContext.Provider value={{ user, login, logout }}>
+      <BrowserRouter>
+        {user && <Navbar />}
+        <main className={user ? 'main-with-nav' : ''}>
+          <Routes>
+            <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+            <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+            <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+            <Route path="/tracker" element={<Protected><Tracker /></Protected>} />
+            <Route path="/analytics" element={<Protected><Analytics /></Protected>} />
+            <Route path="/jobs/:id" element={<Protected><JobDetail /></Protected>} />
+            <Route path="/search" element={<Protected><Search /></Protected>} />
+            <Route path="/resumes" element={<Protected><Resumes /></Protected>} />
+            <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
+            <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
+          </Routes>
+        </main>
+      </BrowserRouter>
     </AuthContext.Provider>
-  );
-}
-
-function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
-}
-
-function AppLayout({ children }) {
-  return (
-    <>
-      <Navbar />
-      <main style={{ paddingTop: '60px', minHeight: '100vh' }}>
-        {children}
-      </main>
-    </>
-  );
-}
-
-function RootRedirect() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
-      </div>
-    );
-  }
-
-  return <Navigate to={user ? '/dashboard' : '/login'} replace />;
-}
-
-export default function App() {
-  return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/" element={<RootRedirect />} />
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Dashboard />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/tracker"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Tracker />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/jobs/:id"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <JobDetail />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/search"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Search />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/resumes"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Resumes />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AuthProvider>
   );
 }
