@@ -68,15 +68,15 @@ function getJobAndResume(jobId, resumeId, userId) {
   return { job, resumeText };
 }
 
-function upsertDocument(jobId, resumeId, type, content) {
+function upsertDocument(jobId, resumeId, type, content, userId) {
   const now = new Date().toISOString();
   const existing = db.prepare('SELECT id FROM ai_documents WHERE job_id = ? AND type = ?').get(jobId, type);
   if (existing) {
     db.prepare('UPDATE ai_documents SET content = ?, resume_id = ?, updated_at = ? WHERE id = ?')
       .run(content, resumeId || null, now, existing.id);
   } else {
-    db.prepare('INSERT INTO ai_documents (job_id, resume_id, type, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(jobId, resumeId || null, type, content, now, now);
+    db.prepare('INSERT INTO ai_documents (job_id, user_id, resume_id, type, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, userId, resumeId || null, type, content, now, now);
   }
 }
 
@@ -262,7 +262,7 @@ Provide:
 4. Top 3 specific recommendations to strengthen this application`
     );
 
-    upsertDocument(job.id, req.body.resume_id, 'match_score', result);
+    upsertDocument(job.id, req.body.resume_id, 'match_score', result, req.user.id);
     res.json({ match_score: result });
   } catch (err) {
     console.error('Match score error:', err);
@@ -300,7 +300,7 @@ ${resumeText}
 Return the tailored resume with the identical line structure as the original.`
     );
 
-    upsertDocument(job.id, req.body.resume_id, 'tailored_resume', result);
+    upsertDocument(job.id, req.body.resume_id, 'tailored_resume', result, req.user.id);
     res.json({ tailored_resume: result });
   } catch (err) {
     console.error('Tailor resume error:', err);
@@ -331,7 +331,7 @@ ${resumeText}
 Write a compelling 3-paragraph cover letter. Include a subject line at the top. Do not use placeholder text — write it ready to send.`
     );
 
-    upsertDocument(job.id, req.body.resume_id, 'cover_letter', result);
+    upsertDocument(job.id, req.body.resume_id, 'cover_letter', result, req.user.id);
     res.json({ cover_letter: result });
   } catch (err) {
     console.error('Cover letter error:', err);
@@ -361,7 +361,7 @@ Provide:
 3. Three smart questions for the candidate to ask the interviewer`
     );
 
-    upsertDocument(job.id, req.body.resume_id, 'interview_prep', result);
+    upsertDocument(job.id, req.body.resume_id, 'interview_prep', result, req.user.id);
     res.json({ interview_prep: result });
   } catch (err) {
     console.error('Interview prep error:', err);
@@ -392,7 +392,7 @@ Subject: [email subject line]
 Make it direct, warm, and confident. Do not use placeholder names.`
     );
 
-    upsertDocument(job.id, req.body.resume_id, 'email_draft', result);
+    upsertDocument(job.id, req.body.resume_id, 'email_draft', result, req.user.id);
     res.json({ email_draft: result });
   } catch (err) {
     console.error('Email draft error:', err);
