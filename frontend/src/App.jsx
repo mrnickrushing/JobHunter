@@ -15,6 +15,12 @@ import './styles/global.css';
 export const AuthContext = createContext(null);
 export function useAuth() { return useContext(AuthContext); }
 
+function Protected({ children }) {
+  const { user } = useContext(AuthContext);
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,11 +49,6 @@ export default function App() {
   }
 
   if (loading) return <div className="app-loading">Loading...</div>;
-
-  function Protected({ children }) {
-    if (!user) return <Navigate to="/login" replace />;
-    return children;
-  }
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>

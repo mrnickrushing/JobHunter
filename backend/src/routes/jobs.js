@@ -173,6 +173,7 @@ router.put('/:id/events/:eventId', authRequired, (req, res) => {
     const allowed = ['title', 'type', 'scheduled_at', 'notes', 'location', 'duration_minutes'];
     const updates = {};
     for (const key of allowed) { if (req.body[key] !== undefined) updates[key] = req.body[key]; }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), req.params.eventId];
     db.prepare(`UPDATE job_events SET ${setClauses} WHERE id = ?`).run(...values);

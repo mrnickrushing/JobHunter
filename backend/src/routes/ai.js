@@ -124,7 +124,8 @@ function injectIntoDocx(originalBuffer, tailoredText) {
       return '<w:t></w:t>';
     });
 
-    docXml = docXml.replace(orig.xml, newParaXml);
+    // Use function form so $ signs in newParaXml aren't treated as replacement patterns
+    docXml = docXml.replace(orig.xml, () => newParaXml);
   }
 
   zip.file('word/document.xml', docXml);
