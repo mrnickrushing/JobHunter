@@ -132,6 +132,45 @@ function injectIntoDocx(originalBuffer, tailoredText) {
   return Buffer.from(zip.generate({ type: 'arraybuffer' }));
 }
 
+// Build a cover letter DOCX that matches the resume's fonts, margins, and run formatting.
+// Extracts run properties and section properties from the original resume DOCX and
+// writes the cover letter lines using that style — blank lines become empty paragraphs.
+function injectCoverLetterIntoDocx(originalBuffer, coverLetterText) {
+  const zip = new PizZip(originalBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) throw new Error('Invalid DOCX: missing word/document.xml');
+
+  const docXml = docFile.asText();
+
+  // Extract run properties from the first body paragraph that contains text (font, size, color)
+  let bodyRpr = '';
+  const paraRe = /<w:p[ >][\s\S]*?<\/w:p>/g;
+  let m;
+  while ((m = paraRe.exec(docXml)) !== null) {
+    const texts = [...m[0].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(x => x[1]);
+    if (texts.join('').trim()) {
+      const rprMatch = m[0].match(/<w:rPr>([\s\S]*?)<\/w:rPr>/);
+      if (rprMatch) bodyRpr = `<w:rPr>${rprMatch[1]}</w:rPr>`;
+      break;
+    }
+  }
+
+  // Preserve page size, margins, and section layout from the original
+  const sectPrMatch = docXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
+  const sectPr = sectPrMatch ? sectPrMatch[0] : '';
+
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const newParas = coverLetterText.split('\n').map(line => {
+    if (!line.trim()) return '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>';
+    return `<w:p><w:r>${bodyRpr}<w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`;
+  });
+
+  const newDocXml = docXml.replace(/<w:body>[\s\S]*<\/w:body>/, () => `<w:body>${newParas.join('')}${sectPr}</w:body>`);
+  zip.file('word/document.xml', newDocXml);
+  return Buffer.from(zip.generate({ type: 'arraybuffer' }));
+}
+
 function textToDocx(text, title) {
   const lines = text.split('\n');
   const children = lines.map(line => {
@@ -522,16 +561,27 @@ router.get('/:jobId/cover-letter/download', async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     const doc = db.prepare(
-      'SELECT content FROM ai_documents WHERE job_id = ? AND type = ? ORDER BY updated_at DESC LIMIT 1'
+      'SELECT content, resume_id FROM ai_documents WHERE job_id = ? AND type = ? ORDER BY updated_at DESC LIMIT 1'
     ).get(req.params.jobId, 'cover_letter');
 
     if (!doc || !doc.content) return res.status(404).json({ error: 'No cover letter found. Generate one first.' });
 
-    const document = textToDocx(doc.content, `Cover Letter — ${job.title} at ${job.company}`);
-    const buffer = await Packer.toBuffer(document);
+    // Use the same resume DOCX as a style template so fonts and margins match
+    const resumeId = req.query.resume_id || doc.resume_id;
+    const original = resumeId
+      ? db.prepare('SELECT file_data, file_type FROM resumes WHERE id = ? AND user_id = ?').get(resumeId, req.user.id)
+      : db.prepare('SELECT file_data, file_type FROM resumes WHERE user_id = ? AND is_default = 1').get(req.user.id);
+
+    let buffer;
+    if (original?.file_data && original.file_type === DOCX_MIME) {
+      buffer = injectCoverLetterIntoDocx(Buffer.from(original.file_data), doc.content);
+    } else {
+      const document = textToDocx(doc.content, `Cover Letter — ${job.title} at ${job.company}`);
+      buffer = await Packer.toBuffer(document);
+    }
 
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Type': DOCX_MIME,
       'Content-Disposition': `attachment; filename="${job.company.replace(/[^a-zA-Z0-9]/g, '-')}-cover-letter.docx"`,
     });
     res.send(buffer);
