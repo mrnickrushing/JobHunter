@@ -99,5 +99,9 @@ migrate("ALTER TABLE ai_documents ADD COLUMN created_at TEXT");
 migrate("ALTER TABLE ai_documents ADD COLUMN updated_at TEXT");
 migrate("UPDATE ai_documents SET created_at = datetime('now') WHERE created_at IS NULL");
 migrate("UPDATE ai_documents SET updated_at = datetime('now') WHERE updated_at IS NULL");
+migrate("ALTER TABLE job_events ADD COLUMN location TEXT");
+migrate("ALTER TABLE job_events ADD COLUMN duration_minutes INTEGER");
+migrate("ALTER TABLE job_notes ADD COLUMN updated_at TEXT");
+migrate("UPDATE job_notes SET updated_at = created_at WHERE updated_at IS NULL");
 
 module.exports = db;
